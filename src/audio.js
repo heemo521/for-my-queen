@@ -190,6 +190,49 @@ export class Sound {
     this.tone(880, this.now, 0.1, 'square', 0.07);
   }
 
+  weapon(id, pos = null) {
+    if (!this.ctx) return;
+    const d = this.at(pos, 30, 3), t = this.now;
+    switch (id) {
+      case 'scatter':
+        this.hiss(t, 0.3, 0.7, 'lowpass', 2500, d, 200);
+        this.tone(110, t, 0.2, 'sine', 0.5, d, 40);
+        break;
+      case 'rail':
+        this.tone(3200, t, 0.35, 'square', 0.06, d, 120);
+        this.hiss(t, 0.12, 0.5, 'highpass', 4000, d);
+        this.tone(55, t, 0.5, 'sine', 0.6, d, 30);
+        break;
+      case 'arc':
+        for (let i = 0; i < 5; i++) this.hiss(t + i * 0.025, 0.04, 0.35, 'bandpass', 1500 + Math.random() * 4000, d);
+        break;
+      case 'mortar':
+        this.tone(140, t, 0.3, 'sine', 0.6, d, 50);
+        this.hiss(t, 0.2, 0.3, 'bandpass', 800, d, 200);
+        break;
+      case 'gravity':
+        this.tone(420, t, 0.9, 'sawtooth', 0.08, d, 40);
+        break;
+      case 'wellOpen':
+        this.tone(48, t, 3, 'sine', 0.5, d, 28);
+        this.hiss(t, 3, 0.5, 'lowpass', 300, d, 60, this.brown);
+        break;
+      case 'swarm':
+        for (let i = 0; i < 6; i++) this.hiss(t + i * 0.05, 0.25, 0.25, 'bandpass', 900, d, 3000);
+        break;
+      case 'siphon':
+        this.tone(500 + Math.random() * 300, t, 0.09, 'sine', 0.035, d);
+        break;
+    }
+  }
+
+  buy() {
+    if (!this.ctx) return;
+    const t = this.now;
+    [1319, 1568, 2093].forEach((f, i) => this.tone(f, t + i * 0.07, 0.25, 'triangle', 0.1));
+    this.hiss(t, 0.2, 0.2, 'highpass', 6000);
+  }
+
   footstep() {
     if (!this.ctx) return;
     this.hiss(this.now, 0.07, 0.12, 'bandpass', 900 + Math.random() * 400, this.master);

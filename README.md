@@ -20,6 +20,39 @@ WebXR needs HTTPS. The easiest host is GitHub Pages: *Settings → Pages → Dep
 
 To run locally: `python3 -m http.server 8000`, then open http://localhost:8000. Desktop works on localhost. For VR on a headset, use the HTTPS URL.
 
+## Money is life
+
+Your **NOVA coin (NVC)** balance is your life, like the movie *In Time*:
+
+- It ticks down every second (faster when boosting or jetpacking). The HUD, and your wrist in VR, show how much life you have left.
+- On foot there is no health bar. Every hit drains NVC.
+- Paid weapons cost NVC per shot, and buying weapons spends it.
+- At 0 you're **WASTED**. The Med Bay revives you with a 150 NVC emergency loan.
+- Earn it back: missions, crates, coin orbs dropped by anything you destroy, or the **Chrono Siphon**, which steals NVC straight out of a target.
+
+## Weapons (Arms Lab, north side of the plaza)
+
+| # | Weapon | Price | Per shot | What it does |
+|---|---|---|---|---|
+| 1 | Pulse Blaster | free | free | reliable plasma bolts |
+| 2 | Scatter Nova | 350 | 2 | 7-bolt plasma shotgun |
+| 3 | Arc Caster | 500 | 3 | lightning that chains between up to 4 targets |
+| 4 | Rail Lance | 650 | 6 | hypersonic beam that pierces everything in line |
+| 5 | Chrono Siphon | 800 | steals | continuous beam that drains NVC from its target into your wallet |
+| 6 | Hornet Swarm | 900 | 10 | 6 homing micro-rockets |
+| 7 | Sun Mortar | 1000 | 8 | lobs a tiny star with a huge blast (don't stand close) |
+| 8 | Singularity Gun | 1500 | 20 | opens a black hole that pulls ships, droids and loot in, then collapses |
+
+Every weapon works on foot and mounted on your ship (bigger, longer range).
+
+## Real crypto (future)
+
+`src/wallet.js` is the only place balances change (`earn`, `spend`, `drain`, `ledger`), so it can be swapped for a real wallet later. Before any real money is involved:
+
+- **Server-authoritative balances.** Anything in browser JavaScript can be edited by players.
+- **No private keys in the client.**
+- **Legal review.** Losing real money on in-game death can count as gambling or real-money gaming in many places, and app stores (including Meta's) have rules about it.
+
 ## What's in it
 
 - **Nova Santos Station**: a walkable neon deck with Med Bay, Neon Bar, Casino, Sky Tower, landing pads and droid pedestrians.
@@ -42,6 +75,7 @@ To run locally: `python3 -m http.server 8000`, then open http://localhost:8000. 
 | Up / down | Space / C | Right grip / left grip |
 | Boost / sprint | Shift | Left trigger |
 | Shoot | Click | Right trigger (aim with your hand on foot) |
+| Switch weapon | 1–8 / mouse wheel | Right stick click |
 | Missile (lock first) | Q / right-click | B |
 | Flares | X | Left stick click |
 | Steal / enter / exit / start mission | E | A |
@@ -54,6 +88,8 @@ To run locally: `python3 -m http.server 8000`, then open http://localhost:8000. 
 - `src/main.js`: game loop, player, ships and AI, police, missions, combat, camera
 - `src/world.js`: universe and station builder
 - `src/models.js`: procedural ships, cockpit, animated astronaut, droids, crates
+- `src/wallet.js`: NVC wallet / ledger (money = life)
+- `src/weapons.js`: weapon definitions, gun models, all firing behaviours
 - `src/fx.js`: particles, explosions, debris, shockwaves, flash lights, speed dust
 - `src/textures.js`: procedural noise, hull plating, rock and planet textures
 - `src/hud.js`: GTA-style HUD (DOM overlay on desktop, floating panel in VR)

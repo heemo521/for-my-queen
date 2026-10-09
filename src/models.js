@@ -385,13 +385,18 @@ export function buildAvatar() {
   gun.position.set(0, -0.42, -0.05);
   gun.rotation.x = -Math.PI / 2;
   armR.knee.add(gun);
+  // glowing life-balance strip on the left forearm
+  const wrist = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.02), basic(0x22ff88));
+  wrist.position.set(0.07, -0.2, -0.02);
+  wrist.rotation.y = 0.6;
+  armL.knee.add(wrist);
   const jets = [];
   for (const x of [-0.12, 0.12]) {
     const j = mk(new THREE.ConeGeometry(0.07, 0.5, 8, 1, true).translate(0, -0.25, 0), additive(0x66ccff), body, x, 0.95, 0.36);
     j.castShadow = false;
     jets.push(j);
   }
-  g.userData = { jets, legL, legR, armL, armR, body, chestLight, phase: 0 };
+  g.userData = { jets, legL, legR, armL, armR, body, chestLight, phase: 0, hand: armR.knee, gun, wrist };
   return g;
 }
 

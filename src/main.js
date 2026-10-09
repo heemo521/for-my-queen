@@ -2,12 +2,14 @@ import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { buildWorld, DECK_R, rand, pick } from './world.js';
-import { buildShipMesh, buildCockpit, buildAvatar, animateAvatar, buildDroid, buildCrate, buildBlaster, PAINT } from './models.js';
+import { buildShipMesh, buildCockpit, buildAvatar, animateAvatar, buildDroid, buildCrate, PAINT } from './models.js';
 import { FX } from './fx.js';
 import { Input } from './input.js';
 import { drawHUD } from './hud.js';
 import { Sound } from './audio.js';
-import { glowTexture } from './textures.js';
+import { glowTexture, canvas, toTexture } from './textures.js';
+import { Wallet } from './wallet.js';
+import { WEAPONS, weaponById, buildGun, createArsenal } from './weapons.js';
 
 const V3 = THREE.Vector3;
 const UP = new V3(0, 1, 0), ORIGIN = new V3();
@@ -53,7 +55,7 @@ const controllers = [0, 1].map(i => {
     c.userData.hand = e.data.handedness;
     c.userData.source = e.data;
     if (e.data.handedness === 'right' && !c.userData.gun) {
-      c.userData.gun = buildBlaster();
+      c.userData.gun = buildGun(S.weapon);
       c.add(c.userData.gun);
     }
   });
@@ -62,10 +64,35 @@ const controllers = [0, 1].map(i => {
   return c;
 });
 const controllerModels = new XRControllerModelFactory();
+// "In Time"-style glowing life balance on your left wrist
+const wristCanvas = canvas(256, 128);
+const wristTex = toTexture(wristCanvas);
+const wrist = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.05), new THREE.MeshBasicMaterial({ map: wristTex, toneMapped: false, transparent: true }));
+wrist.position.set(0, 0.04, 0.085);
+wrist.rotation.x = -Math.PI / 2 + 0.35;
 for (const i of [0, 1]) {
   const grip = renderer.xr.getControllerGrip(i);
   grip.add(controllerModels.createControllerModel(grip));
+  grip.addEventListener('connected', e => { if (e.data.handedness === 'left') grip.add(wrist); });
   rig.add(grip);
+}
+function drawWrist() {
+  const g = wristCanvas.getContext('2d');
+  const low = wallet.balance / Math.max(0.1, S.drainRate) < 60;
+  g.clearRect(0, 0, 256, 128);
+  g.fillStyle = 'rgba(0,8,4,0.85)';
+  g.fillRect(0, 0, 256, 128);
+  g.shadowColor = low ? '#ff3355' : '#22ff88';
+  g.shadowBlur = 16;
+  g.fillStyle = low ? '#ff5577' : '#5dffa8';
+  g.font = 'bold 54px Bungee, Impact, monospace';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(wallet.balance.toFixed(2), 128, 56, 240);
+  g.shadowBlur = 0;
+  g.font = 'bold 18px Inter, sans-serif';
+  g.fillText('NVC · LIFE', 128, 106);
+  wristTex.needsUpdate = true;
 }
 const rightController = () => controllers.find(c => c.userData.hand === 'right');
 
@@ -128,13 +155,20 @@ resize();
 
 // ---------- game state ----------
 const S = {
-  started: false, mode: 'foot', ship: null, credits: 250, wanted: 0, evade: 0, health: 100,
+  started: false, mode: 'foot', ship: null, wanted: 0, evade: 0, drainRate: 1, deltas: [],
+  weapon: 'pulse', owned: new Set(['pulse']), fireCd: 0,
   deadT: 0, deathPos: new V3(), view: 'third', msg: '', msgT: 0, big: '', bigSub: '', bigColor: '#fff', bigT: 0,
   mission: null, nextMission: 0, radioName: '', radioT: 0, dmg: 0, spray: 0, sprayDone: false, prompt: '',
   stickX: 0, stickY: 0, snapLatch: false, camOff: new V3(), upkeepT: 0, time: 0, hudOn: true, frame: 0,
   heat: 0, overheat: false, missiles: 6, flares: 8, lockTarget: null, lockT: 0, hitT: 0, kill: false,
   shake: 0, aimT: 0, warning: false, cockpit: null, stepPhase: 0, fov: 70,
 };
+const wallet = new Wallet(300);
+wallet.onChange((type, amount, reason) => {
+  if (reason === 'life' || amount < 1) return;
+  S.deltas.unshift({ text: (type === 'earn' ? '+' : '−') + amount.toFixed(0), color: type === 'earn' ? '#7dffb0' : '#ff6b81', age: 0 });
+  if (S.deltas.length > 4) S.deltas.pop();
+});
 const player = { pos: world.spawn.clone(), vel: new V3(), yaw: 0, pitch: -0.1, onGround: true, fireCd: 0, avatar: buildAvatar() };
 player.yaw = Math.atan2(player.pos.x, player.pos.z); // face the plaza
 scene.add(player.avatar);
@@ -187,6 +221,7 @@ class Ship {
     this.parked = !!opts.parked;
     this.fireCd = 0;
     this.missileCd = rand(6, 12);
+    this.coins = team === 'police' ? 90 : team === 'pirate' ? 300 : kind === 'hauler' ? rand(120, 200) : rand(40, 120);
     this.gear = 1;
     this.alive = true;
     this.ai = { dest: null, flee: 0, state: 'cruise', home: null, aggro: false };
@@ -527,18 +562,19 @@ const laserGlow = new THREE.BoxGeometry(0.5, 0.5, 7.5);
 const TEAM_COL = { player: 0x39ff14, police: 0xff3344, pirate: 0xff9900, civ: 0x39ff14 };
 const addMat = (color, opacity) => new THREE.MeshBasicMaterial({ color, toneMapped: false, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
 const LASER = {};
-for (const t of ['player', 'police', 'pirate']) LASER[t] = { core: addMat(new THREE.Color(TEAM_COL[t]).lerp(new THREE.Color(1, 1, 1), 0.6), 1), glow: addMat(TEAM_COL[t], 0.35) };
+TEAM_COL.scatter = 0xff7a00;
+for (const t of ['player', 'police', 'pirate', 'scatter']) LASER[t] = { core: addMat(new THREE.Color(TEAM_COL[t]).lerp(new THREE.Color(1, 1, 1), 0.6), 1), glow: addMat(TEAM_COL[t], 0.35) };
 const lasers = [];
 
-function spawnLaser(origin, dir, speed, team, dmg, owner, baseVel) {
+function spawnLaser(origin, dir, speed, team, dmg, owner, baseVel, life = 1.6, style = team) {
   const vel = dir.clone().multiplyScalar(speed);
   if (baseVel) vel.add(baseVel);
-  const m = new THREE.Mesh(laserCore, LASER[team].core);
-  m.add(new THREE.Mesh(laserGlow, LASER[team].glow));
+  const m = new THREE.Mesh(laserCore, LASER[style].core);
+  m.add(new THREE.Mesh(laserGlow, LASER[style].glow));
   m.position.copy(origin);
   m.quaternion.setFromUnitVectors(tA.set(0, 0, 1), tB.copy(vel).normalize());
   scene.add(m);
-  lasers.push({ m, vel, team, dmg, owner, life: 1.6 });
+  lasers.push({ m, vel, team, dmg, owner, life });
   fx.muzzle(origin, dir, team === 'player' ? 'green' : 'red', baseVel);
 }
 
@@ -552,28 +588,79 @@ function shipFire(s, team, dmg, speed, dir = null) {
   }
 }
 
-function footFire(a) {
-  let origin, dir;
+// Where your gun points: right controller in VR, crosshair on desktop.
+function footAim(a) {
   const rc = rightController();
   if (a.vr && rc) {
-    rc.updateWorldMatrix(true, false);
-    origin = rc.localToWorld(rc.userData.gun?.userData.muzzle.clone() || new V3());
-    dir = new V3(0, 0, -1).applyQuaternion(rc.getWorldQuaternion(new THREE.Quaternion()));
-    haptic('right', 0.4, 40);
-    if (rc.userData.gun) rc.userData.gun.position.z = 0.04; // recoil kick
-  } else {
-    const cdir = camera.getWorldDirection(new V3());
-    const aim = camera.getWorldPosition(new V3()).addScaledVector(cdir, 300);
-    const right = new V3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
-    origin = player.pos.clone().add(tA.set(0, 1.45, 0)).addScaledVector(right, 0.38).addScaledVector(cdir, 0.7);
-    dir = aim.sub(origin).normalize();
-    S.shake = Math.max(S.shake, 0.08);
+    rc.updateWorldMatrix(true, true);
+    const origin = rc.userData.gun ? rc.userData.gun.localToWorld(rc.userData.gun.userData.muzzle.clone()) : rc.getWorldPosition(new V3());
+    const dir = new V3(0, 0, -1).applyQuaternion(rc.getWorldQuaternion(new THREE.Quaternion()));
+    return { origin, dir };
   }
-  spawnLaser(origin, dir, 420, 'player', 12, null, null);
-  fx.flashLight(origin, 25, 0.06, 0x66ff66, 12);
-  sound.zap(1.5, null, 0.6);
-  S.aimT = 1.2;
-  panicDroids(player.pos, 35);
+  const cdir = camera.getWorldDirection(new V3());
+  const aim = camera.getWorldPosition(new V3()).addScaledVector(cdir, 300);
+  const right = new V3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
+  const origin = player.pos.clone().add(tA.set(0, 1.45, 0)).addScaledVector(right, 0.38).addScaledVector(cdir, 0.7);
+  return { origin, dir: aim.sub(origin).normalize() };
+}
+
+// Fire the equipped weapon. Every shot of a paid weapon spends life (NVC).
+function fireWeapon(a, origins, dir, baseVel, ship, dt) {
+  const w = weaponById(S.weapon);
+  const center = origins.reduce((acc, o) => acc.add(o), new V3()).divideScalar(origins.length);
+  if (w.id === 'siphon') {
+    if (!a.fire || S.overheat) return;
+    arsenal.siphon(center, dir, ship, dt);
+    S.heat += w.heat * dt * 10;
+    S.aimT = 1.2;
+    if (Math.random() < 0.3) haptic('right', 0.15, 20);
+  } else {
+    if (!a.fire || S.fireCd > 0 || S.overheat) return;
+    if (w.cost && !wallet.spend(w.cost, w.name)) {
+      message(`Can't afford ${w.name} — that shot would end your life`, 1.5);
+      S.fireCd = 0.5;
+      return;
+    }
+    arsenal.fire(w.id, { origins, dir, baseVel, ship });
+    S.fireCd = w.cd * (ship && w.id === 'pulse' ? 0.65 : 1);
+    S.heat += w.heat;
+    S.aimT = 1.2;
+    fx.flashLight(center, ship ? 40 : 25, 0.06, w.color, ship ? 20 : 12);
+    haptic('right', 0.3 + w.heat, 40 + w.heat * 200);
+    if (!ship) {
+      S.shake = Math.max(S.shake, 0.08 + w.heat * 0.6);
+      const rc = rightController();
+      if (rc?.userData.gun) rc.userData.gun.position.z = 0.04 + w.heat * 0.1; // recoil kick
+    }
+  }
+  if (S.heat >= 1) { S.heat = 1; S.overheat = true; message('Weapon overheated!', 1.2); }
+  if (!ship) panicDroids(player.pos, 35);
+}
+
+function setWeapon(id, quiet = false) {
+  if (!S.owned.has(id)) return;
+  S.weapon = id;
+  const w = weaponById(id);
+  const rc = rightController();
+  if (rc) {
+    if (rc.userData.gun) rc.remove(rc.userData.gun);
+    rc.userData.gun = buildGun(id);
+    rc.add(rc.userData.gun);
+  }
+  const av = player.avatar.userData;
+  if (av.gun) av.hand.remove(av.gun);
+  av.gun = buildGun(id);
+  av.gun.scale.setScalar(1.6);
+  av.gun.position.set(0, -0.42, -0.05);
+  av.gun.rotation.x = -Math.PI / 2;
+  av.hand.add(av.gun);
+  if (!quiet) message(`${w.name} — ${w.desc}`, 1.6);
+}
+
+function cycleWeapon(step) {
+  const owned = WEAPONS.filter(w => S.owned.has(w.id));
+  const i = owned.findIndex(w => w.id === S.weapon);
+  setWeapon(owned[(i + step + owned.length) % owned.length].id);
 }
 
 function segSphere(a, b, c, r) {
@@ -611,7 +698,7 @@ function updateLasers(dt) {
       }
       if (!hit) {
         for (const d of droids) {
-          if (d.alive && segSphere(prevPos, p, tA.copy(d.m.position).setY(d.m.position.y + 0.6), 0.7)) { killDroid(d); hit = true; S.hitT = 0.25; S.kill = true; break; }
+          if (d.alive && segSphere(prevPos, p, tA.copy(d.m.position).setY(d.m.position.y + 0.6), 0.7)) { damageDroid(d, L.dmg); hit = true; S.hitT = 0.25; S.kill = !d.alive; break; }
         }
       }
     } else if (S.mode === 'ship' && S.ship && segSphere(prevPos, p, S.ship.pos, S.ship.radius)) {
@@ -821,24 +908,36 @@ function destroyShip(s, by) {
     S.kill = true;
     if (s.team === 'civ' && s.owner !== 'player') addWanted(1, 1);
     else if (s.team === 'police') addWanted(1, 3);
-    else if (s.team === 'pirate' && !s.isTarget) { S.credits += 250; message('Pirate bounty +$250'); }
+    else if (s.team === 'pirate') message('Pirate down — grab the NVC!', 2);
   }
   panicDroids(s.pos, 80);
-  if (s === S.ship) {
-    S.ship = null;
-    playerDie();
-  }
+  if (s === S.ship) ejectFromWreck(s);
+  else if (s.coins > 0) dropCoins(s.pos, s.coins, s.vel);
 }
 
+// Your ship blew up: you survive in your suit if you can afford it.
+function ejectFromWreck(s) {
+  S.ship = null;
+  if (S.cockpit) { S.cockpit.parent?.remove(S.cockpit); S.cockpit = null; }
+  S.mode = 'foot';
+  player.pos.copy(s.pos).add(randUnit().multiplyScalar(s.radius + 4));
+  player.vel.copy(s.vel).multiplyScalar(0.3).add(randUnit().multiplyScalar(12));
+  player.onGround = false;
+  wallet.drain(150, 'ship destroyed', true);
+  bigText('EJECTED', 'Ship destroyed · −150 NVC', '#ff7a00', 3);
+  if (wallet.empty) playerDie('Blown up with an empty wallet');
+}
+
+// On foot there is no health bar: every hit drains your NVC.
 function hurtPlayer(d) {
   if (S.mode !== 'foot') return;
-  S.health -= d;
+  wallet.drain(d * 1.5, 'damage', true);
   S.dmg = Math.min(0.6, S.dmg + d / 40);
   sound.hit();
   haptic('both', 0.5, 80);
-  if (S.health <= 0) {
+  if (wallet.empty) {
     fx.explosion(player.pos.clone().add(tA.set(0, 1, 0)), 1.5, null, false);
-    playerDie();
+    playerDie('Shot down to zero NVC');
   }
 }
 
@@ -857,7 +956,7 @@ function spawnDroid(pos) {
   const m = buildDroid();
   m.position.copy(pos || randomDeckPoint());
   scene.add(m);
-  droids.push({ m, target: randomDeckPoint(), speed: rand(1.2, 2.2), alive: true, wait: 0, flee: 0 });
+  droids.push({ m, target: randomDeckPoint(), speed: rand(1.2, 2.2), alive: true, wait: 0, flee: 0, hp: 20, coins: Math.round(rand(15, 50)), pulled: 0, center: new V3() });
 }
 
 function panicDroids(from, radius) {
@@ -872,6 +971,12 @@ function panicDroids(from, radius) {
   }
 }
 
+function damageDroid(d, amt) {
+  if (!d.alive) return;
+  d.hp -= amt;
+  if (d.hp <= 0) killDroid(d);
+}
+
 function killDroid(d) {
   d.alive = false;
   scene.remove(d.m);
@@ -879,6 +984,7 @@ function killDroid(d) {
   sound.boom(0.4, d.m.position.clone());
   addWanted(1, 1);
   panicDroids(d.m.position, 40);
+  if (d.coins > 0) dropCoins(d.m.position.clone().setY(1), d.coins, null);
 }
 
 function pushOutXZ(p, b, r, height) {
@@ -894,6 +1000,9 @@ function updateDroids(dt) {
   for (const d of droids) {
     if (!d.alive) continue;
     const p = d.m.position;
+    if (d.pulled > 0) { d.pulled -= dt; d.m.rotation.x += dt * 6; d.m.rotation.z += dt * 4; continue; }
+    if (p.y > 0.06) { p.y = Math.max(0, p.y - 9 * dt); d.m.rotation.x *= 0.9; d.m.rotation.z *= 0.9; if (p.y > 0.06) continue; }
+    if (xzLen(p) > DECK_R - 3) p.setLength(DECK_R - 4).setY(p.y);
     if (d.wait > 0) { d.wait -= dt; continue; }
     const fleeing = d.flee > 0;
     if (fleeing) d.flee -= dt;
@@ -912,7 +1021,8 @@ function updateDroids(dt) {
     if (xzLen(p) > DECK_R - 3) d.target = randomDeckPoint();
     d.m.rotation.y = Math.atan2(-dx, -dz);
     d.m.rotation.x = fleeing ? -0.2 : 0;
-    d.m.position.y = Math.abs(Math.sin(S.time * 8 * sp)) * 0.05;
+    d.m.position.y = Math.abs(Math.sin(S.time * 8 * sp)) * 0.05 + 0.001;
+    d.m.rotation.z = 0;
     if (S.mode === 'ship' && S.ship && S.ship.vel.length() > 8 && S.ship.pos.distanceTo(p) < S.ship.radius) killDroid(d);
   }
   for (let i = droids.length - 1; i >= 0; i--) if (!droids[i].alive) droids.splice(i, 1);
@@ -944,15 +1054,174 @@ function updateCrates(dt) {
     c.rotation.x += dt * 0.5;
     if (c.position.distanceTo(p) < reach) {
       const amt = Math.round(rand(5, 20)) * 10;
-      S.credits += amt;
+      wallet.earn(amt, 'crate');
       let extra = '';
       if (Math.random() < 0.35 && S.missiles < 6) { S.missiles = Math.min(6, S.missiles + 2); extra = ' + 2 missiles'; }
-      message(`+$${amt}${extra}`, 1.5);
+      message(`+${amt} NVC${extra}`, 1.5);
       sound.coin();
       fx.sparks(c.position, 20, 15, new THREE.Color(0x7dff6b));
       placeCrate(c);
     }
   }
+}
+
+// ---------- NVC coin orbs (dropped by anything you destroy) ----------
+const orbs = [];
+const orbGeo = new THREE.OctahedronGeometry(0.35);
+const orbMat = new THREE.MeshStandardMaterial({ color: 0x22ff88, emissive: 0x22ff88, emissiveIntensity: 1.2, metalness: 0.8, roughness: 0.2 });
+const orbSprite = new THREE.SpriteMaterial({ map: missileGlowTex, color: 0x22ff88, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+function dropCoins(pos, amount, vel) {
+  amount = Math.round(amount);
+  if (amount <= 0) return;
+  const n = clamp(Math.ceil(amount / 40), 1, 6);
+  const inSpace = !(xzLen(pos) < DECK_R + 10 && pos.y < 35 && pos.y > -10);
+  for (let i = 0; i < n; i++) {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(orbGeo, orbMat));
+    const sp = new THREE.Sprite(orbSprite);
+    sp.scale.setScalar(2.2);
+    g.add(sp);
+    g.position.copy(pos);
+    g.scale.setScalar(inSpace ? 3 : 1);
+    scene.add(g);
+    const v = randUnit().multiplyScalar(inSpace ? 15 : 4).add(tA.set(0, inSpace ? 0 : 4, 0));
+    if (vel) v.addScaledVector(vel, 0.3);
+    orbs.push({ m: g, value: amount / n, vel: v, life: 45 });
+  }
+}
+function updateOrbs(dt) {
+  const p = playerPos(), inShip = S.mode === 'ship';
+  for (let i = orbs.length - 1; i >= 0; i--) {
+    const o = orbs[i], m = o.m;
+    o.life -= dt;
+    const onDeck = xzLen(m.position) < DECK_R && m.position.y > -1 && m.position.y < 35;
+    if (onDeck) o.vel.y -= 12 * dt;
+    o.vel.multiplyScalar(Math.exp(-(onDeck ? 1 : 0.6) * dt));
+    m.position.addScaledVector(o.vel, dt);
+    if (onDeck && m.position.y < 0.5) { m.position.y = 0.5; o.vel.y = Math.abs(o.vel.y) * 0.4; }
+    m.rotation.y += dt * 3;
+    const d = m.position.distanceTo(p);
+    const magnet = inShip ? 60 : 8;
+    if (S.mode !== 'dead' && d < magnet) m.position.lerp(p, Math.min(1, dt * 4 * (1.3 - d / magnet)));
+    if (S.mode !== 'dead' && d < (inShip ? 10 : 1.6)) {
+      wallet.earn(o.value, 'pickup');
+      sound.coin();
+      fx.sparks(m.position, 10, 8, new THREE.Color(0x7dffb0));
+      o.life = 0;
+    }
+    if (o.life <= 0) { scene.remove(m); orbs.splice(i, 1); }
+    else if (o.life < 5) m.visible = Math.floor(o.life * 6) % 2 === 0;
+  }
+}
+
+// ---------- arsenal wiring ----------
+function shipTarget(s) {
+  return (s.tgt ||= {
+    kind: 'ship', ref: s, alive: () => s.alive,
+    get pos() { return s.pos; },
+    get radius() { return s.radius; },
+    pull(dirIn, k, dt) { if (s.parked) s.parked = false; s.vel.addScaledVector(dirIn, k * dt); },
+  });
+}
+function droidTarget(d) {
+  return (d.tgt ||= {
+    kind: 'droid', ref: d, radius: 0.7, alive: () => d.alive,
+    get pos() { return d.center.copy(d.m.position).setY(d.m.position.y + 0.7); },
+    pull(dirIn, k, dt) { d.pulled = 0.3; d.m.position.addScaledVector(dirIn, Math.min(k * dt * 0.5, 2)); },
+  });
+}
+const arsenal = createArsenal({
+  scene, fx, sound, solidAt, impact,
+  targets: () => {
+    const out = [];
+    for (const s of ships) if (s.alive && s !== S.ship) out.push(shipTarget(s));
+    for (const d of droids) if (d.alive) out.push(droidTarget(d));
+    return out;
+  },
+  damage: (t, amt) => (t.kind === 'ship' ? damageShip(t.ref, amt, 'player') : damageDroid(t.ref, amt)),
+  steal: (t, amt) => {
+    const r = t.ref, k = Math.min(r.coins || 0, amt);
+    if (k <= 0) return 0;
+    r.coins -= k;
+    wallet.earn(k, 'siphon');
+    if (!r.robbed) {
+      r.robbed = true;
+      if (t.kind === 'droid') addWanted(0, 1);
+      else if (r.team === 'police') addWanted(0, 2);
+      else if (r.team === 'pirate') r.ai.aggro = true;
+      else if (r.owner !== 'player') { addWanted(0, 1); if (r.pilot === 'npc') r.ai.flee = 8; }
+    }
+    if (t.kind === 'droid' && r.coins <= 0) killDroid(r);
+    return k;
+  },
+  spawnLaser: (o, d, speed, dmg, baseVel, life, style) => spawnLaser(o, d, speed, 'player', dmg, null, baseVel, life, style),
+  splashSelf: (pos, radius, dmg) => {
+    if (S.mode === 'foot') {
+      const d = playerPos().distanceTo(pos);
+      if (d < radius) hurtPlayer(dmg * (1 - d / radius));
+    } else if (S.mode === 'ship' && S.ship) {
+      const d = S.ship.pos.distanceTo(pos);
+      if (d < radius) damageShip(S.ship, dmg * 0.4 * (1 - d / radius), 'env');
+    }
+  },
+  pullables: () => [...crates, ...orbs.map(o => o.m)],
+  pullPlayer: (c, r, k, dt) => {
+    const p = playerPos(), d = p.distanceTo(c);
+    if (d > r || d < 0.5) return;
+    const dirIn = c.clone().sub(p).divideScalar(d);
+    if (S.mode === 'foot') { player.vel.addScaledVector(dirIn, k * dt * 0.6); player.onGround = false; }
+    else if (S.mode === 'ship') S.ship.vel.addScaledVector(dirIn, k * dt * 0.4);
+  },
+  hit: kill => { S.hitT = 0.25; S.kill = kill; },
+});
+
+// ---------- Arms Lab: weapon holograms you can buy ----------
+const hex = c => '#' + c.toString(16).padStart(6, '0');
+function labelTexture(w, owned) {
+  const c = canvas(512, 160), g = c.getContext('2d');
+  g.fillStyle = 'rgba(4,10,8,0.8)';
+  g.fillRect(0, 0, 512, 160);
+  g.strokeStyle = hex(w.color);
+  g.lineWidth = 4;
+  g.strokeRect(4, 4, 504, 152);
+  g.textAlign = 'center';
+  g.fillStyle = hex(w.color);
+  g.font = 'bold 46px Bungee, Impact, sans-serif';
+  g.fillText(w.name.toUpperCase(), 256, 54, 490);
+  g.fillStyle = owned ? '#7dffb0' : '#ffffff';
+  g.font = 'bold 36px Inter, sans-serif';
+  g.fillText(owned ? 'OWNED' : `◈ ${w.price} NVC`, 256, 102);
+  g.fillStyle = '#cbd5e1';
+  g.font = '24px Inter, sans-serif';
+  g.fillText(w.desc + (w.cost ? ` · ${w.cost}/shot` : ''), 256, 140, 490);
+  return toTexture(c);
+}
+const labItems = WEAPONS.slice(1).map((w, i) => {
+  const slot = world.armsLab.slots[i];
+  const g = buildGun(w.id);
+  g.scale.setScalar(5);
+  g.position.copy(slot);
+  scene.add(g);
+  const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture(w, false), toneMapped: false, depthWrite: false }));
+  label.scale.set(3.4, 1.06, 1);
+  label.position.copy(slot).add(tA.set(0, 1.5, 0));
+  scene.add(label);
+  return { w, g, label, slot };
+});
+function buyWeapon(item) {
+  const w = item.w;
+  if (S.owned.has(w.id)) { setWeapon(w.id); return; }
+  if (!wallet.spend(w.price, 'buy ' + w.name)) {
+    message(`You need more than ${w.price} NVC — buying it would end your life`, 2);
+    sound.chime(false);
+    return;
+  }
+  S.owned.add(w.id);
+  setWeapon(w.id, true);
+  sound.buy();
+  bigText('NEW WEAPON', `${w.name} — ${w.desc}`, hex(w.color), 2.5);
+  item.label.material.map = labelTexture(w, true);
+  item.label.material.needsUpdate = true;
 }
 
 // ---------- player: on foot ----------
@@ -1050,6 +1319,7 @@ function updateFoot(dt, a) {
   }
   animateAvatar(av, dt, hs, !player.onGround, S.aimT > 0);
   for (const j of av.userData.jets) j.visible = jet;
+  S.jetting = jet;
   if (jet && Math.random() < 0.6) {
     const back = av.localToWorld(tA.set(0, 0.9, 0.38));
     fx.exhaust(back, tB.set(0, -1, 0), v, 0.2, true);
@@ -1060,10 +1330,8 @@ function updateFoot(dt, a) {
     if (ph !== S.stepPhase) { S.stepPhase = ph; sound.footstep(); }
   }
 
-  if (a.fire && player.fireCd <= 0) {
-    footFire(a);
-    player.fireCd = 0.2;
-  }
+  const aim = footAim(a);
+  fireWeapon(a, [aim.origin], aim.dir, null, false, dt);
 }
 
 // ---------- player: flying ----------
@@ -1084,15 +1352,7 @@ function updatePlayerShip(dt, a) {
   }
   c.lift = a.lift;
   c.boost = a.boost;
-  // laser heat management
-  S.heat = Math.max(0, S.heat - dt * (S.overheat ? 0.45 : 0.32));
-  if (S.overheat && S.heat < 0.35) S.overheat = false;
-  if (a.fire && s.fireCd <= 0 && !S.overheat) {
-    shipFire(s, 'player', 18, 650);
-    s.fireCd = 0.13;
-    S.heat += 0.055;
-    if (S.heat >= 1) { S.heat = 1; S.overheat = true; message('Lasers overheated!', 1.2); }
-  }
+  fireWeapon(a, s.mesh.userData.guns.map(g => s.local(g)), s.fwd(new V3()), s.vel, true, dt);
   if (a.missile) {
     if (S.missiles <= 0) message('No missiles — grab $ crates or visit the Pay \'n\' Spray', 1.5);
     else {
@@ -1175,6 +1435,13 @@ function handleInteract(a) {
   const key = a.vr ? 'A' : 'E';
   S.prompt = '';
   if (S.mode === 'foot') {
+    const item = labItems.find(it => Math.hypot(it.slot.x - player.pos.x, it.slot.z - player.pos.z) < 2.6 && player.pos.y < 3);
+    if (item) {
+      const w = item.w;
+      S.prompt = S.owned.has(w.id) ? `${key}: Equip ${w.name}` : `${key}: Buy ${w.name} — ${w.price} NVC`;
+      if (a.interact) buyWeapon(item);
+      return;
+    }
     const near = nearestShip(player.pos, 9);
     const atMarker = !S.mission && player.pos.distanceTo(world.marker.pos) < 4;
     if (near) {
@@ -1200,17 +1467,16 @@ function handleInteract(a) {
   }
 }
 
-function playerDie() {
+function playerDie(reason = 'Your NVC ran out') {
   if (S.mode === 'dead') return;
   S.deathPos.copy(playerPos());
   if (S.ship) { S.ship.pilot = null; S.ship = null; }
   if (S.cockpit) { S.cockpit.parent?.remove(S.cockpit); S.cockpit = null; }
   S.mode = 'dead';
   S.deadT = 4.5;
-  S.health = 0;
   player.avatar.visible = false;
   if (S.mission) failMission('You died.', true);
-  bigText('WASTED', '', '#ff3355', 4.5);
+  bigText('WASTED', reason, '#ff3355', 4.5);
   sound.chime(false);
   haptic('both', 1, 400);
 }
@@ -1220,16 +1486,14 @@ function respawn() {
   player.vel.set(0, 0, 0);
   player.yaw = Math.atan2(player.pos.x, player.pos.z);
   player.pitch = -0.1;
-  S.health = 100;
   S.mode = 'foot';
   S.wanted = 0;
   S.missiles = Math.max(S.missiles, 4);
   S.flares = Math.max(S.flares, 6);
   S.heat = 0;
   S.overheat = false;
-  const bill = Math.min(S.credits, 100);
-  S.credits -= bill;
-  message(bill ? `Med Bay bill: -$${bill}` : 'Med Bay patched you up for free.', 4);
+  wallet.earn(150, 'emergency life loan');
+  message('Med Bay revived you with an emergency loan: +150 NVC. The clock is ticking.', 5);
   ensurePlayerShip();
 }
 
@@ -1285,15 +1549,14 @@ function updatePaySpray(dt) {
   }
   if (S.spray < 2) return;
   S.sprayDone = true;
-  if (S.credits < 100) { message("Pay 'n' Spray: $100 needed. Come back with cash.", 3); return; }
-  S.credits -= 100;
+  if (!wallet.spend(100, "Pay 'n' Spray")) { message("Pay 'n' Spray: you need more than 100 NVC.", 3); return; }
   S.wanted = 0;
   S.evade = 0;
   s.hull = s.maxHull;
   S.missiles = 6;
   S.flares = 8;
   s.mesh.userData.hull.color.setHex(pick(PAINT));
-  bigText('NEW PAINT JOB', '-$100 · repaired, rearmed, record cleared', '#ff7ad9', 3);
+  bigText('NEW PAINT JOB', '−100 NVC · repaired, rearmed, record cleared', '#ff7ad9', 3);
   sound.chime(true);
 }
 
@@ -1356,8 +1619,8 @@ function startMission() {
 function completeMission() {
   const m = S.mission;
   S.mission = null;
-  S.credits += m.reward;
-  bigText('MISSION PASSED', `+$${m.reward}`, '#ffd23f', 4);
+  wallet.earn(m.reward, 'mission: ' + m.name);
+  bigText('MISSION PASSED', `+${m.reward} NVC`, '#ffd23f', 4);
   sound.chime(true);
 }
 
@@ -1495,7 +1758,15 @@ function placeCamera(dt, vr) {
       const right = tC.set(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
       head.addScaledVector(right, 0.7).addScaledVector(dir, -4.5).add(tC.set(0, 0.4, 0));
     }
+    // keep the third-person camera out of walls
+    const pivot = player.pos.clone().add(tC.set(0, 1.7, 0));
     const eye = head.clone();
+    if (S.view === 'third') {
+      for (let k = 1; k <= 12; k++) {
+        const pt = tD.copy(pivot).lerp(head, k / 12);
+        if (world.buildings.some(b => b.distanceToPoint(pt) < 0.3)) { eye.copy(pivot).lerp(head, Math.max(0, (k - 1.5) / 12)); break; }
+      }
+    }
     setLook(rig, eye, eye.clone().add(dir));
   }
   // camera shake (desktop only — in VR this becomes controller rumble)
@@ -1549,13 +1820,18 @@ function hudData(vr, lock) {
   }
   for (const mi of missiles) add(mi.m.position, mi.team === 'player' ? '#7dff6b' : '#ff7a00', 2.5, mi.target === 'player');
   for (const c of crates) add(c.position, '#22ff88', 2);
+  for (const o of orbs) add(o.m.position, '#7dffb0', 2.5);
+  if (!inShip) add(world.armsLab.center, '#22ff88', 4, false, 'sq');
   if (!inShip) for (const d of droids) add(d.m.position, '#94a3b8', 2);
   const tgt = missionTarget();
   if (tgt) add(tgt, '#ffd23f', 6, true);
   const m = S.mission;
   return {
-    vr, time: S.time, credits: S.credits, wanted: S.wanted, evading: S.wanted > 0 && S.evade > 2,
-    mode: S.mode, health: Math.max(0, S.health), hull: inShip ? S.ship.hull / S.ship.maxHull : 0,
+    vr, time: S.time, balance: wallet.balance, drainRate: S.drainRate, lifeSecs: wallet.balance / Math.max(0.1, S.drainRate),
+    deltas: S.deltas, wanted: S.wanted, evading: S.wanted > 0 && S.evade > 2,
+    weapon: (w => ({ id: w.id, name: w.name, cost: w.cost, css: hex(w.color) }))(weaponById(S.weapon)),
+    slots: WEAPONS.map(w => ({ owned: S.owned.has(w.id), current: w.id === S.weapon, css: hex(w.color) })),
+    mode: S.mode, hull: inShip ? S.ship.hull / S.ship.maxHull : 0,
     speed: inShip ? Math.round(S.ship.vel.length()) : 0, boost: inShip && S.ship.ctrl.boost,
     prompt: S.mode === 'dead' ? '' : S.prompt, msg: S.msgT > 0 ? S.msg : '', big: S.bigT > 0 ? S.big : '', bigSub: S.bigSub, bigColor: S.bigColor,
     mission: m && { title: m.title, timer: m.timer, dist: m.dist, extra: m.extra },
@@ -1585,6 +1861,7 @@ renderer.domElement.addEventListener('mousedown', () => { if (S.started && !rend
 renderer.xr.addEventListener('sessionstart', () => { startGame(); S.view = 'first'; });
 renderer.xr.addEventListener('sessionend', () => { S.view = 'third'; camera.fov = S.fov = 70; camera.updateProjectionMatrix(); });
 
+setWeapon('pulse', true);
 parkShip(world.pads[0], 'player');
 for (let i = 1; i < world.pads.length; i++) parkShip(world.pads[i], 'civ');
 for (let i = 0; i < 14; i++) spawnCivilian();
@@ -1611,10 +1888,25 @@ function tick() {
       else S.view = S.view === 'third' ? 'first' : 'third';
     }
     if (a.flare && S.mode !== 'dead') dropFlares();
+    if (a.slot >= 0 && WEAPONS[a.slot]) {
+      if (S.owned.has(WEAPONS[a.slot].id)) setWeapon(WEAPONS[a.slot].id);
+      else message(`${WEAPONS[a.slot].name}: buy it at the Arms Lab (${WEAPONS[a.slot].price} NVC)`, 2);
+    }
+    if (a.weaponStep) cycleWeapon(a.weaponStep);
+    S.fireCd -= dt;
+    S.heat = Math.max(0, S.heat - dt * (S.overheat ? 0.45 : 0.32));
+    if (S.overheat && S.heat < 0.35) S.overheat = false;
     if (S.mode === 'foot') updateFoot(dt, a);
     else if (S.mode === 'ship') updatePlayerShip(dt, a);
     else if (S.mode === 'dead' && (S.deadT -= dt) <= 0) respawn();
-    player.fireCd -= dt;
+    // life drains every second; boosting and jetpacking burn it faster
+    if (S.mode !== 'dead') {
+      S.drainRate = 1 + (S.mode === 'ship' && S.ship?.ctrl.boost ? 0.6 : 0) + (S.mode === 'foot' && S.jetting ? 0.5 : 0);
+      wallet.tick(dt, S.drainRate);
+      if (wallet.empty) playerDie("Your NVC ran out — time's up");
+    }
+    for (const dl of S.deltas) dl.age += dt;
+    S.deltas = S.deltas.filter(dl => dl.age < 1.6);
     S.aimT -= dt;
     handleInteract(a);
   }
@@ -1631,6 +1923,9 @@ function tick() {
 
   updateLasers(dt);
   updateMissiles(dt);
+  arsenal.update(dt);
+  updateOrbs(dt);
+  for (const it of labItems) { it.g.rotation.y += dt * 0.8; it.g.position.y = it.slot.y + Math.sin(S.time * 2 + it.slot.x) * 0.1; }
   updateDroids(dt);
   updateCrates(dt);
   let lock = 0;
@@ -1669,6 +1964,7 @@ function tick() {
     if (vr || (S.cockpit && S.view === 'first')) {
       if (S.frame % 3 === 0) { drawHUD(vrCtx, vrCanvas.width, vrCanvas.height, { ...d, crosshair: false }); vrTex.needsUpdate = true; }
     }
+    if (vr && S.frame % 6 === 0) drawWrist();
     if (vr) hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
     else drawHUD(hudCtx, hudCanvas.width, hudCanvas.height, d);
     hintEl.hidden = vr || input.locked || S.mode === 'dead';
@@ -1681,4 +1977,4 @@ function tick() {
 renderer.setAnimationLoop(tick);
 
 // Debug handle for automated testing in the browser console.
-window.__game = { prof, renderer, S, player, world, fx, ships: () => ships, missiles, startGame, enterShip, startMission, damageShip, hurtPlayer, launchMissile };
+window.__game = { prof, renderer, wallet, arsenal, setWeapon, labItems, buyWeapon, orbs, S, player, world, fx, ships: () => ships, missiles, startGame, enterShip, startMission, damageShip, hurtPlayer, launchMissile };

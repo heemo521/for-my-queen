@@ -560,6 +560,41 @@ export function buildWorld(scene, renderer) {
     }
   });
 
+  // Arms Lab: weapon holograms on pedestals (filled in by the game)
+  {
+    const z = 42, x0 = -29, n = 7, gap = 4.2, cx = x0 + ((n - 1) * gap) / 2, wide = n * gap + 2;
+    const plat = shadowy(new THREE.Mesh(new THREE.BoxGeometry(wide, 0.25, 4.5), darkMetal));
+    plat.position.set(cx, 0.12, z);
+    station.add(plat);
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(wide, 0.06, 0.08), neon(0x22ff88));
+    strip.position.set(cx, 0.27, z - 2.25);
+    station.add(strip);
+    const wall = shadowy(new THREE.Mesh(new THREE.BoxGeometry(wide, 6, 0.4), metal));
+    wall.position.set(cx, 3, z + 2.4);
+    station.add(wall);
+    W.buildings.push(new THREE.Box3().setFromObject(wall));
+    const top = new THREE.Mesh(new THREE.BoxGeometry(wide + 0.4, 0.3, 0.6), neon(0x22ff88));
+    top.position.set(cx, 6.1, z + 2.4);
+    station.add(top);
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(14, 3.5), new THREE.MeshBasicMaterial({ map: signTexture('ARMS LAB', '#22ff88'), toneMapped: false }));
+    sign.position.set(cx, 4.3, z + 2.15);
+    sign.rotation.y = Math.PI;
+    station.add(sign);
+    const slots = [];
+    for (let i = 0; i < n; i++) {
+      const x = x0 + i * gap;
+      const ped = shadowy(new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.6, 1, 16), darkMetal));
+      ped.position.set(x, 0.75, z);
+      station.add(ped);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.04, 6, 24), neon(0x22ff88));
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(x, 1.27, z);
+      station.add(ring);
+      slots.push(new V3(x, 2, z));
+    }
+    W.armsLab = { slots, center: new V3(cx, 0, z) };
+  }
+
   // Mission marker
   {
     const g = new THREE.Group();
