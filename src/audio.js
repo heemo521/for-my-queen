@@ -1,4 +1,4 @@
-// WebAudio sound effects plus a procedural in-ship "radio" with a few stations.
+// WebAudio: 3D-positioned sound effects, layered engine, warnings, and a procedural radio.
 
 const STATIONS = [
   { name: 'RADIO OFF' },
@@ -15,25 +15,46 @@ export class Sound {
     const C = window.AudioContext || window.webkitAudioContext;
     if (!C) return;
     const ctx = (this.ctx = new C());
+    this.comp = ctx.createDynamicsCompressor();
+    this.comp.threshold.value = -14;
+    this.comp.ratio.value = 4;
+    this.comp.connect(ctx.destination);
     this.master = ctx.createGain();
-    this.master.gain.value = 0.6;
-    this.master.connect(ctx.destination);
+    this.master.gain.value = 0.7;
+    this.master.connect(this.comp);
 
-    const len = ctx.sampleRate;
+    const len = ctx.sampleRate * 2;
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = this.noise.getChannelData(0);
+    let b = 0;
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    // brown noise for rumbles
+    this.brown = ctx.createBuffer(1, len, ctx.sampleRate);
+    const bd = this.brown.getChannelData(0);
+    for (let i = 0; i < len; i++) { b = (b + 0.02 * (Math.random() * 2 - 1)) / 1.02; bd[i] = b * 3.5; }
 
+    // engine: saw + filtered brown-noise rumble
+    this.engGain = ctx.createGain();
+    this.engGain.gain.value = 0;
+    this.engGain.connect(this.master);
     this.engOsc = ctx.createOscillator();
     this.engOsc.type = 'sawtooth';
     this.engOsc.frequency.value = 40;
     this.engFilter = ctx.createBiquadFilter();
     this.engFilter.type = 'lowpass';
     this.engFilter.frequency.value = 300;
-    this.engGain = ctx.createGain();
-    this.engGain.gain.value = 0;
-    this.engOsc.connect(this.engFilter).connect(this.engGain).connect(this.master);
+    this.engOsc.connect(this.engFilter).connect(this.engGain);
     this.engOsc.start();
+    const rumble = ctx.createBufferSource();
+    rumble.buffer = this.brown;
+    rumble.loop = true;
+    this.rumbleFilter = ctx.createBiquadFilter();
+    this.rumbleFilter.type = 'lowpass';
+    this.rumbleFilter.frequency.value = 200;
+    this.rumbleGain = ctx.createGain();
+    this.rumbleGain.gain.value = 0;
+    rumble.connect(this.rumbleFilter).connect(this.rumbleGain).connect(this.master);
+    rumble.start();
 
     this.sirOsc = ctx.createOscillator();
     this.sirOsc.type = 'triangle';
@@ -43,14 +64,44 @@ export class Sound {
     this.sirOsc.start();
 
     this.music = ctx.createGain();
-    this.music.gain.value = 0.32;
+    this.music.gain.value = 0.28;
     this.music.connect(this.master);
     this.station = 0;
     this.step = 0;
     this.nextNote = 0;
+    this.beepT = 0;
   }
 
   get now() { return this.ctx.currentTime; }
+
+  setListener(pos, fwd, up) {
+    if (!this.ctx) return;
+    const l = this.ctx.listener;
+    if (l.positionX) {
+      const t = this.now;
+      l.positionX.setTargetAtTime(pos.x, t, 0.02); l.positionY.setTargetAtTime(pos.y, t, 0.02); l.positionZ.setTargetAtTime(pos.z, t, 0.02);
+      l.forwardX.setTargetAtTime(fwd.x, t, 0.02); l.forwardY.setTargetAtTime(fwd.y, t, 0.02); l.forwardZ.setTargetAtTime(fwd.z, t, 0.02);
+      l.upX.setTargetAtTime(up.x, t, 0.02); l.upY.setTargetAtTime(up.y, t, 0.02); l.upZ.setTargetAtTime(up.z, t, 0.02);
+    } else {
+      l.setPosition(pos.x, pos.y, pos.z);
+      l.setOrientation(fwd.x, fwd.y, fwd.z, up.x, up.y, up.z);
+    }
+  }
+
+  // Returns a destination node placed in 3D (or the master bus for UI sounds).
+  at(pos, ref = 30, life = 3) {
+    if (!pos) return this.master;
+    const p = this.ctx.createPanner();
+    p.panningModel = 'equalpower';
+    p.distanceModel = 'inverse';
+    p.refDistance = ref;
+    p.maxDistance = 5000;
+    p.rolloffFactor = 1.2;
+    if (p.positionX) { p.positionX.value = pos.x; p.positionY.value = pos.y; p.positionZ.value = pos.z; } else p.setPosition(pos.x, pos.y, pos.z);
+    p.connect(this.master);
+    setTimeout(() => p.disconnect(), life * 1000);
+    return p;
+  }
 
   tone(freq, t, dur, type, gain, dest = this.master, endFreq) {
     const o = this.ctx.createOscillator(), g = this.ctx.createGain();
@@ -64,33 +115,84 @@ export class Sound {
     o.stop(t + dur + 0.05);
   }
 
-  hiss(t, dur, gain, filterType, freq, dest = this.master) {
+  hiss(t, dur, gain, filterType, freq, dest = this.master, endFreq, buf = this.noise) {
     const s = this.ctx.createBufferSource(), f = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
-    s.buffer = this.noise;
+    s.buffer = buf;
     f.type = filterType;
-    f.frequency.value = freq;
+    f.frequency.setValueAtTime(freq, t);
+    if (endFreq) f.frequency.exponentialRampToValueAtTime(endFreq, t + dur);
     g.gain.setValueAtTime(gain, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     s.connect(f).connect(g).connect(dest);
-    s.start(t, Math.random() * 0.5);
+    s.start(t, Math.random());
     s.stop(t + dur + 0.05);
   }
 
-  zap(pitch = 1, vol = 1) {
-    if (!this.ctx || vol <= 0.01) return;
-    this.tone(1400 * pitch, this.now, 0.14, 'square', 0.07 * vol, this.master, 180 * pitch);
-  }
-
-  boom(vol = 1) {
-    if (!this.ctx || vol <= 0.01) return;
-    const t = this.now;
-    this.hiss(t, 1.2, 0.8 * vol, 'lowpass', 600);
-    this.tone(90, t, 0.8, 'sine', 0.6 * vol, this.master, 30);
-  }
-
-  hit() {
+  zap(pitch = 1, pos = null, vol = 1) {
     if (!this.ctx) return;
-    this.hiss(this.now, 0.15, 0.4, 'bandpass', 900);
+    const d = this.at(pos, 25, 1), t = this.now;
+    this.tone(1500 * pitch, t, 0.16, 'square', 0.06 * vol, d, 160 * pitch);
+    this.tone(700 * pitch, t, 0.1, 'sawtooth', 0.05 * vol, d, 90 * pitch);
+    this.hiss(t, 0.05, 0.12 * vol, 'highpass', 3000, d);
+  }
+
+  boom(size = 1, pos = null) {
+    if (!this.ctx) return;
+    const d = this.at(pos, 60 * size, 4), t = this.now;
+    this.hiss(t, 0.25, 1.0 * size, 'lowpass', 4000, d, 300);
+    this.hiss(t, 2.2, 1.2 * size, 'lowpass', 500, d, 60, this.brown);
+    this.tone(70, t, 1.2, 'sine', 0.9 * size, d, 25);
+    this.hiss(t + 0.08, 1.4, 0.25 * size, 'bandpass', 1800, d, 400);
+  }
+
+  hit(pos = null) {
+    if (!this.ctx) return;
+    const d = this.at(pos, 20, 1), t = this.now;
+    this.hiss(t, 0.18, 0.5, 'bandpass', 1400, d, 500);
+    this.tone(220, t, 0.12, 'square', 0.08, d, 80);
+  }
+
+  clang() {
+    if (!this.ctx) return;
+    const t = this.now;
+    this.hiss(t, 0.4, 0.8, 'lowpass', 1200, this.master, 120, this.brown);
+    this.tone(160, t, 0.3, 'triangle', 0.25, this.master, 60);
+  }
+
+  missile(pos = null) {
+    if (!this.ctx) return;
+    const d = this.at(pos, 40, 3), t = this.now;
+    this.hiss(t, 1.6, 0.6, 'bandpass', 600, d, 2500);
+    this.tone(90, t, 0.5, 'sawtooth', 0.15, d, 50);
+  }
+
+  flare() {
+    if (!this.ctx) return;
+    const t = this.now;
+    for (let i = 0; i < 4; i++) this.hiss(t + i * 0.07, 0.12, 0.3, 'highpass', 2500, this.master);
+  }
+
+  // lock: 0 none, 1 acquiring, 2 locked
+  lockTone(state, dt) {
+    if (!this.ctx || !state) return;
+    this.beepT -= dt;
+    if (this.beepT > 0) return;
+    const t = this.now;
+    if (state === 2) { this.tone(1760, t, 0.09, 'sine', 0.06); this.beepT = 0.1; }
+    else { this.tone(1100, t, 0.06, 'sine', 0.05); this.beepT = 0.3; }
+  }
+
+  warning(dt) {
+    if (!this.ctx) return;
+    this.warnT = (this.warnT || 0) - dt;
+    if (this.warnT > 0) return;
+    this.warnT = 0.22;
+    this.tone(880, this.now, 0.1, 'square', 0.07);
+  }
+
+  footstep() {
+    if (!this.ctx) return;
+    this.hiss(this.now, 0.07, 0.12, 'bandpass', 900 + Math.random() * 400, this.master);
   }
 
   coin() {
@@ -107,12 +209,14 @@ export class Sound {
     notes.forEach((f, i) => this.tone(f, t + i * 0.12, 0.4, 'triangle', 0.15));
   }
 
-  setEngine(level) {
+  setEngine(level, boost) {
     if (!this.ctx) return;
     const t = this.now;
-    this.engGain.gain.setTargetAtTime(level * 0.09, t, 0.1);
+    this.engGain.gain.setTargetAtTime(level * 0.07, t, 0.1);
     this.engOsc.frequency.setTargetAtTime(38 + level * 55, t, 0.15);
     this.engFilter.frequency.setTargetAtTime(180 + level * 900, t, 0.15);
+    this.rumbleGain.gain.setTargetAtTime(level * (boost ? 0.5 : 0.25), t, 0.15);
+    this.rumbleFilter.frequency.setTargetAtTime(boost ? 900 : 260, t, 0.2);
   }
 
   setSiren(level) {

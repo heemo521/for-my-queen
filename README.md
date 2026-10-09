@@ -30,6 +30,8 @@ To run locally: `python3 -m http.server 8000`, then open http://localhost:8000. 
 - **On foot**: jump, jetpack onto rooftops, and float in zero-g (EVA) when you're off the station.
 - **Radio** (R / X button): three procedural stations: synthwave, space funk, chip rock.
 - **WASTED**: if you die, you respawn at the Med Bay (minus the bill), and insurance delivers a new ship.
+- **Combat**: twin wingtip lasers with heat management, lock-on homing missiles (hold your nose on a target), flares to shake off incoming missiles, splash damage, and police missiles from 3★.
+- **Realism**: reflective PBR hull plating, shadows, planets with atmospheres and clouds, Milky Way sky, multi-stage explosions with fireballs, debris, shockwaves and light flashes, engine exhaust, damage smoke and fire, speed streaks, landing gear, a working cockpit with a live dashboard screen, 3D positional audio, and controller rumble in VR.
 
 ## Controls
 
@@ -40,6 +42,8 @@ To run locally: `python3 -m http.server 8000`, then open http://localhost:8000. 
 | Up / down | Space / C | Right grip / left grip |
 | Boost / sprint | Shift | Left trigger |
 | Shoot | Click | Right trigger (aim with your hand on foot) |
+| Missile (lock first) | Q / right-click | B |
+| Flares | X | Left stick click |
 | Steal / enter / exit / start mission | E | A |
 | Radio | R | X |
 | Camera / HUD | V (1st/3rd person) | Y (toggle HUD) |
@@ -49,7 +53,9 @@ To run locally: `python3 -m http.server 8000`, then open http://localhost:8000. 
 - `index.html`: page, title screen, import map (Three.js r160 from CDN)
 - `src/main.js`: game loop, player, ships and AI, police, missions, combat, camera
 - `src/world.js`: universe and station builder
-- `src/models.js`: procedural ships, astronaut, droids, crates
+- `src/models.js`: procedural ships, cockpit, animated astronaut, droids, crates
+- `src/fx.js`: particles, explosions, debris, shockwaves, flash lights, speed dust
+- `src/textures.js`: procedural noise, hull plating, rock and planet textures
 - `src/hud.js`: GTA-style HUD (DOM overlay on desktop, floating panel in VR)
 - `src/input.js`: keyboard/mouse and WebXR controller mapping
 - `src/audio.js`: sound effects and procedural radio

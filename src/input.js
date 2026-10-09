@@ -11,6 +11,7 @@ export class Input {
     this.mdx = 0;
     this.mdy = 0;
     this.mouseDown = false;
+    this.rightClick = false;
     this.locked = false;
     this.prevXR = new Map();
 
@@ -21,7 +22,11 @@ export class Input {
     });
     addEventListener('keyup', e => this.keys.delete(e.code));
     addEventListener('blur', () => { this.keys.clear(); this.mouseDown = false; });
-    el.addEventListener('mousedown', e => { if (e.button === 0) this.mouseDown = true; });
+    el.addEventListener('mousedown', e => {
+      if (e.button === 0) this.mouseDown = true;
+      if (e.button === 2 && this.locked) this.rightClick = true;
+    });
+    el.addEventListener('contextmenu', e => e.preventDefault());
     addEventListener('mouseup', e => { if (e.button === 0) this.mouseDown = false; });
     document.addEventListener('pointerlockchange', () => { this.locked = document.pointerLockElement === el; });
     addEventListener('mousemove', e => {
@@ -57,6 +62,8 @@ export class Input {
       interact: e('KeyE') || e('Enter'),
       radio: e('KeyR'),
       view: e('KeyV'),
+      missile: e('KeyQ') || this.rightClick,
+      flare: e('KeyX'),
     };
 
     if (session) {
@@ -77,12 +84,14 @@ export class Input {
           if (btn[1]) a.lift -= 1;
           if (edge(4)) a.radio = true;
           if (edge(5)) a.view = true;
+          if (edge(3)) a.flare = true;
         } else if (src.handedness === 'right') {
           a.rx = sx;
           a.ry = sy;
           if (btn[0]) a.fire = true;
           if (btn[1]) a.lift += 1;
           if (edge(4) || edge(3)) a.interact = true;
+          if (edge(5)) a.missile = true;
         }
         this.prevXR.set(src.handedness, btn);
       }
@@ -92,6 +101,7 @@ export class Input {
     }
 
     this.mdx = this.mdy = 0;
+    this.rightClick = false;
     this.edges.clear();
     return a;
   }

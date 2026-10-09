@@ -128,6 +128,19 @@ export function drawHUD(g, w, h, d) {
     text(g, String(d.speed), w - P - 70 * u, h - P - 30 * u, 54 * u, '#fff', 'right');
     text(g, 'm/s', w - P, h - P - 24 * u, 20 * u, '#cbd5e1', 'right', BODY, 'bold');
     if (d.boost) text(g, 'BOOST', w - P, h - P - 78 * u, 22 * u, '#ff7ad9', 'right');
+    // weapons: heat bar + missiles
+    const hx = w - P - 200 * u, hy = h - P - 128 * u;
+    bar(g, hx, hy, 200 * u, 8 * u, d.heat, d.overheat ? '#ff3355' : d.heat > 0.7 ? '#ffb000' : '#e2e8f0');
+    text(g, d.overheat ? 'OVERHEAT' : 'LASER HEAT', hx, hy - 14 * u, 13 * u, d.overheat ? '#ff3355' : '#cbd5e1', 'left', BODY, 'bold');
+    text(g, `MSL ${d.missiles}   FLR ${d.flares}`, w - P, hy - 14 * u, 15 * u, '#fff', 'right', BODY, 'bold');
+    if (d.lock) {
+      const locked = d.lock === 2;
+      text(g, locked ? '◆ LOCKED' : '◇ LOCKING', w - P, hy - 40 * u, 18 * u, locked ? '#ff3355' : '#ffd23f', 'right', BODY, 'bold');
+    }
+  }
+  if (d.warning && Math.floor(d.time * 6) % 2 === 0) {
+    text(g, '⚠ MISSILE INCOMING', w / 2, h * 0.24, 34 * u, '#ff3355', 'center');
+    text(g, d.vr ? 'Left stick click: flares' : 'X: flares', w / 2, h * 0.24 + 32 * u, 18 * u, '#fff', 'center', BODY, 'bold');
   }
 
   // Mission banner
@@ -160,6 +173,17 @@ export function drawHUD(g, w, h, d) {
     if (d.bigSub) text(g, d.bigSub, w / 2, h * 0.42 + 64 * u, 28 * u, '#fff', 'center', BODY, 'bold');
   }
 
+  if (d.hitT > 0) {
+    const r = 18 * u, k = 6 * u;
+    g.strokeStyle = d.kill ? `rgba(255,60,80,${d.hitT * 4})` : `rgba(255,255,255,${d.hitT * 4})`;
+    g.lineWidth = 3 * u;
+    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      g.beginPath();
+      g.moveTo(w / 2 + sx * k, h / 2 + sy * k);
+      g.lineTo(w / 2 + sx * r, h / 2 + sy * r);
+      g.stroke();
+    }
+  }
   if (d.crosshair) {
     g.strokeStyle = 'rgba(255,255,255,0.85)';
     g.lineWidth = 2;
