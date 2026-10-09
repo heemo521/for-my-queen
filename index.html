@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grand Theft Orbit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Inter:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: #fff; font-family: Inter, system-ui, sans-serif; }
+  #app canvas { display: block; }
+  #hud { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #title {
+    position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 16px; text-align: center; overflow-y: auto;
+    background: radial-gradient(ellipse at center, rgba(20, 0, 40, 0.45), rgba(0, 0, 0, 0.85));
+  }
+  #title h1 {
+    margin: 0; font-family: Bungee, Impact, sans-serif; font-size: clamp(38px, 8vw, 104px); line-height: 0.95;
+    background: linear-gradient(180deg, #ffe259 0%, #ff2e88 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 4px 0 #000);
+  }
+  #title .sub { font-size: 15px; letter-spacing: 0.3em; color: #ff7ad9; text-transform: uppercase; }
+  #play {
+    font-family: Bungee, Impact, sans-serif; font-size: 26px; padding: 12px 48px; border: 3px solid #000; border-radius: 10px;
+    background: #8dff6b; color: #000; cursor: pointer; box-shadow: 0 5px 0 #000;
+  }
+  #play:hover { background: #b6ff9e; }
+  .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px 28px; max-width: 760px; width: 100%; text-align: left; font-size: 13px; color: #cbd5e1; }
+  .controls h3 { margin: 0 0 4px; font-size: 13px; color: #ffd23f; letter-spacing: 0.15em; }
+  .controls b { color: #fff; }
+  .tip { font-size: 12px; color: #94a3b8; max-width: 640px; }
+  #hint { position: fixed; left: 50%; top: 50%; transform: translate(-50%, 120px); z-index: 4; padding: 8px 14px; border-radius: 8px; background: rgba(0, 0, 0, 0.6); font-size: 14px; pointer-events: none; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app"></div>
+<canvas id="hud"></canvas>
+<div id="hint" hidden>Click to take control</div>
+<div id="title">
+  <div class="sub">♛ for my queen ♛</div>
+  <h1>GRAND THEFT<br>ORBIT</h1>
+  <div class="sub">Nova Santos Station · open-world space crime</div>
+  <button id="play">PLAY</button>
+  <div class="tip">On a VR headset (Quest, PC VR), press <b>ENTER VR</b> at the bottom of the screen.</div>
+  <div class="controls">
+    <div>
+      <h3>DESKTOP · ON FOOT</h3>
+      <b>WASD</b> move · <b>Mouse</b> look · <b>Shift</b> sprint<br>
+      <b>Space</b> jump / jetpack · <b>C</b> jetpack down<br>
+      <b>Click</b> blaster · <b>E</b> steal ship / start mission<br>
+      <b>V</b> 1st/3rd person · <b>R</b> radio
+    </div>
+    <div>
+      <h3>DESKTOP · FLYING</h3>
+      <b>W/S</b> throttle · <b>Mouse</b> pitch &amp; yaw · <b>A/D</b> roll<br>
+      <b>Space/C</b> up/down · <b>Shift</b> boost · <b>Click</b> lasers<br>
+      <b>E</b> exit ship, or board a nearby ship
+    </div>
+    <div>
+      <h3>VR CONTROLLERS</h3>
+      <b>Left stick</b> move / throttle+roll · <b>Right stick</b> turn / pitch+yaw<br>
+      <b>Right trigger</b> shoot · <b>Left trigger</b> boost<br>
+      <b>Grips</b> jetpack up/down · <b>A</b> interact · <b>X</b> radio · <b>Y</b> hide HUD
+    </div>
+    <div>
+      <h3>THE STREETS</h3>
+      Steal ships, run missions (yellow marker in the plaza), collect $ crates.
+      Crimes raise your ★ wanted level. Lose the cops by staying away from them, or
+      land in the <b>Pay 'n' Spray</b> ($100).
+    </div>
+  </div>
+</div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
