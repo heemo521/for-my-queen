@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { buildWorld, DECK_R, rand, pick } from './world.js';
 import { buildShipMesh, buildAvatar, buildDroid, buildCrate, buildBlaster, PAINT } from './models.js';
 import { Input } from './input.js';
@@ -52,6 +53,13 @@ const controllers = [0, 1].map(i => {
   rig.add(c);
   return c;
 });
+// Show the real Quest Touch controllers in your hands.
+const controllerModels = new XRControllerModelFactory();
+for (const i of [0, 1]) {
+  const grip = renderer.xr.getControllerGrip(i);
+  grip.add(controllerModels.createControllerModel(grip));
+  rig.add(grip);
+}
 const rightController = () => controllers.find(c => c.userData.hand === 'right');
 
 // HUD: DOM canvas on desktop, lazy-follow panel in VR

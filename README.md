@@ -2,6 +2,15 @@
 
 **Grand Theft Orbit**: an open-world space crime game you play in VR, GTA-style, right in the browser (WebXR + Three.js). No install and no build step.
 
+## Play on Meta Quest 3
+
+1. One-time setup: in GitHub, go to **Settings → Pages**, set *Source* to **Deploy from a branch**, pick **main** and **/ (root)**, then **Save**. After about a minute the game is live at **https://heemo521.github.io/for-my-queen/**.
+2. On the Quest 3, open the **Browser** app and go to `heemo521.github.io/for-my-queen`. Bookmark it.
+3. Tap **ENTER VR** at the bottom of the page and allow the VR permission.
+4. Use the Touch controllers. Hand tracking alone has no thumbsticks, so it can't move you.
+
+Tip: you can play seated or standing. If the floor height feels off, hold the Meta button to recenter.
+
 ## Play
 
 - **VR headset (Quest, PC VR):** open the hosted page in the headset browser and press **ENTER VR**.
