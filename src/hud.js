@@ -179,6 +179,30 @@ export function drawHUD(g, w, h, d) {
   }
   if (d.radio) text(g, '♪ ' + d.radio, w / 2, topY + 6 * u, 24 * u, '#ff7ad9', 'center');
 
+  // Conversation / kill feed (left, above the radar)
+  if (d.feed && d.feed.length) {
+    let fy = cy - R - 24 * u;
+    for (let i = d.feed.length - 1; i >= 0 && fy > h * 0.35; i--) {
+      const f = d.feed[i];
+      g.globalAlpha = Math.max(0, Math.min(1, (14 - f.age) / 3));
+      g.font = `bold ${Math.round(16 * u)}px ${BODY}`;
+      const nameW = g.measureText(f.name + ': ').width;
+      text(g, f.name + ':', P, fy, 16 * u, f.css, 'left', BODY, 'bold');
+      const maxW = Math.min(w * 0.42, 520 * u) - nameW;
+      let line = '', lines = [];
+      for (const word of f.text.split(' ')) {
+        const t = line ? line + ' ' + word : word;
+        g.font = `${Math.round(16 * u)}px ${BODY}`;
+        if (g.measureText(t).width > maxW && line) { lines.push(line); line = word; } else line = t;
+      }
+      lines.push(line);
+      lines.forEach((l, k) => text(g, l, P + nameW + 6 * u, fy + k * 20 * u, 16 * u, '#fff', 'left', BODY, ''));
+      fy -= (lines.length * 20 + 8) * u;
+      g.globalAlpha = 1;
+    }
+  }
+  if (d.brain) text(g, d.brain === 'online' ? '● Claude brains online' : d.brain === 'offline' ? '○ characters on offline personalities' : '◌ connecting brains…', P, h - 10 * u, 11 * u, d.brain === 'online' ? '#7dffb0' : '#94a3b8', 'left', BODY, 'bold');
+
   // Context prompt
   if (d.prompt) {
     g.font = `bold ${Math.round(22 * u)}px ${BODY}`;

@@ -31,6 +31,7 @@
   .controls h3 { margin: 0 0 4px; font-size: 13px; color: #ffd23f; letter-spacing: 0.15em; }
   .controls b { color: #fff; }
   .tip { font-size: 12px; color: #94a3b8; max-width: 640px; }
+  #chat { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%); z-index: 6; width: min(560px, calc(100% - 32px)); padding: 10px 14px; border-radius: 10px; border: 2px solid #22ff88; background: rgba(0,0,0,0.75); color: #fff; font: 16px Inter, system-ui, sans-serif; outline: none; }
   #hint { position: fixed; left: 50%; top: 50%; transform: translate(-50%, 120px); z-index: 4; padding: 8px 14px; border-radius: 8px; background: rgba(0, 0, 0, 0.6); font-size: 14px; pointer-events: none; }
 </style>
 <script type="importmap">
@@ -46,6 +47,7 @@
 <div id="app"></div>
 <canvas id="hud"></canvas>
 <div id="hint" hidden>Click to take control</div>
+<input id="chat" hidden maxlength="200" placeholder="Say something… (Enter to send, Esc to cancel, /name YourName)" autocomplete="off">
 <div id="title">
   <div class="sub">♛ for my queen ♛</div>
   <h1>GRAND THEFT<br>ORBIT</h1>
@@ -59,7 +61,7 @@
       <b>WASD</b> move · <b>Mouse</b> look · <b>Shift</b> sprint<br>
       <b>Space</b> jump / jetpack · <b>C</b> jetpack down<br>
       <b>Click</b> fire · <b>1–8 / wheel</b> switch weapon · <b>E</b> steal ship / buy / start mission<br>
-      <b>V</b> 1st/3rd person · <b>R</b> radio
+      <b>V</b> 1st/3rd person · <b>R</b> radio · <b>T</b> talk · <b>G</b> give 25 NVC
     </div>
     <div>
       <h3>DESKTOP · FLYING</h3>
@@ -72,12 +74,13 @@
       <h3>VR CONTROLLERS</h3>
       <b>Left stick</b> move / throttle+roll · <b>Right stick</b> turn / pitch+yaw<br>
       <b>Right trigger</b> shoot · <b>Right stick click</b> switch weapon · <b>B</b> missile · <b>Left stick click</b> flares · <b>Left trigger</b> boost<br>
-      <b>Grips</b> jetpack up/down · <b>A</b> interact · <b>X</b> radio · <b>Y</b> hide HUD
+      <b>Grips</b> jetpack up/down · <b>A</b> interact · <b>X</b> radio · <b>hold Y</b> talk
     </div>
     <div>
       <h3>THE STREETS</h3>
       Buy 7 futuristic weapons at the <b>Arms Lab</b>. Everything you destroy drops NVC; the <b>Chrono Siphon</b> steals it straight from targets.
       Steal ships, run missions (yellow marker in the plaza), collect crates.
+      Five other people live here too (Vex, Big Tam, Kiko-9, Sister Nyx and Rourke), with their own lives, clocks and opinions of you. Talk to them.
       Crimes raise your ★ wanted level. Lose the cops by staying away from them, or
       land in the <b>Pay 'n' Spray</b> ($100).
     </div>
