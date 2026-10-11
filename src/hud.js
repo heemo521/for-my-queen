@@ -57,12 +57,21 @@ export function drawHUD(g, w, h, d) {
     g.fillRect(0, 0, w, h);
   }
 
-  // Money + wanted stars
-  text(g, '$' + Math.floor(d.credits).toLocaleString('en-US'), w - P, P + 22 * u, 42 * u, '#8dff6b', 'right');
+  // Life balance (NVC) + wanted stars
+  const low = d.lifeSecs < 60;
+  const balCol = low ? (Math.floor(d.time * 4) % 2 ? '#ff3355' : '#ff8a8a') : '#7dffb0';
+  text(g, '◈ ' + d.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), w - P, P + 22 * u, 42 * u, balCol, 'right');
+  const mins = Math.floor(d.lifeSecs / 60), secs = Math.floor(d.lifeSecs % 60);
+  text(g, `NVC  −${d.drainRate.toFixed(1)}/s  ·  ${mins}:${String(secs).padStart(2, '0')} of life left`, w - P, P + 56 * u, 15 * u, low ? '#ff8a8a' : '#cbd5e1', 'right', BODY, 'bold');
+  d.deltas.forEach((dl, i) => {
+    g.globalAlpha = Math.max(0, 1 - dl.age / 1.6);
+    text(g, dl.text, w - P - 260 * u, P + 22 * u + i * 22 * u - dl.age * 14 * u, 20 * u, dl.color, 'right', DISPLAY);
+    g.globalAlpha = 1;
+  });
   for (let i = 0; i < 5; i++) {
     const on = i < d.wanted;
     const blink = on && d.evading && Math.floor(d.time * 5) % 2 === 0;
-    star(g, w - P - 20 * u - i * 42 * u, P + 74 * u, 17 * u, on ? (blink ? '#555' : '#fff') : 'rgba(255,255,255,0.12)');
+    star(g, w - P - 20 * u - i * 42 * u, P + 92 * u, 17 * u, on ? (blink ? '#555' : '#fff') : 'rgba(255,255,255,0.12)');
   }
 
   // Radar
@@ -113,21 +122,48 @@ export function drawHUD(g, w, h, d) {
   g.fill();
   g.restore();
 
-  // Health / hull bars under radar
+  // Hull bar under radar (in a ship). On foot, your NVC balance is your health.
   const by = cy + R + 14 * u, bw = R * 2;
   if (d.mode === 'ship') {
     bar(g, P, by, bw, 10 * u, d.hull, d.hull < 0.3 ? '#ff4d4d' : '#38bdf8');
     text(g, 'HULL', P + 4 * u, by + 26 * u, 14 * u, '#cbd5e1', 'left', BODY, 'bold');
   } else {
-    bar(g, P, by, bw, 10 * u, d.health / 100, d.health < 30 ? '#ff4d4d' : '#4ade80');
-    text(g, 'HEALTH', P + 4 * u, by + 26 * u, 14 * u, '#cbd5e1', 'left', BODY, 'bold');
+    text(g, 'LIFE = NVC', P + 4 * u, by + 10 * u, 14 * u, '#7dffb0', 'left', BODY, 'bold');
   }
 
-  // Speedometer
+  // Weapon panel (bottom-right)
+  const wx = w - P, wy = h - P - (d.mode === 'ship' ? 150 : 40) * u;
+  if (d.weapon) {
+    text(g, d.weapon.name.toUpperCase(), wx, wy - 52 * u, 24 * u, d.weapon.css, 'right');
+    text(g, d.weapon.cost ? `${d.weapon.cost} NVC / shot` : d.weapon.id === 'siphon' ? 'steals NVC' : 'free', wx, wy - 26 * u, 14 * u, '#cbd5e1', 'right', BODY, 'bold');
+    // owned slots
+    d.slots.forEach((sl, i) => {
+      const x = wx - (d.slots.length - 1 - i) * 22 * u - 8 * u, y = wy - 82 * u;
+      g.fillStyle = sl.owned ? sl.css : 'rgba(255,255,255,0.1)';
+      g.globalAlpha = sl.current ? 1 : sl.owned ? 0.55 : 1;
+      g.fillRect(x - 8 * u, y - 8 * u, 16 * u, 16 * u);
+      g.globalAlpha = 1;
+      if (sl.current) { g.strokeStyle = '#fff'; g.lineWidth = 2; g.strokeRect(x - 10 * u, y - 10 * u, 20 * u, 20 * u); }
+      if (!d.vr) text(g, String(i + 1), x, y + 1 * u, 10 * u, '#000', 'center', BODY, 'bold');
+    });
+    bar(g, wx - 200 * u, wy - 4 * u, 200 * u, 7 * u, d.heat, d.overheat ? '#ff3355' : d.heat > 0.7 ? '#ffb000' : '#e2e8f0');
+    if (d.overheat) text(g, 'OVERHEAT', wx - 200 * u, wy - 16 * u, 13 * u, '#ff3355', 'left', BODY, 'bold');
+  }
+
+  // Speedometer + missiles
   if (d.mode === 'ship') {
     text(g, String(d.speed), w - P - 70 * u, h - P - 30 * u, 54 * u, '#fff', 'right');
     text(g, 'm/s', w - P, h - P - 24 * u, 20 * u, '#cbd5e1', 'right', BODY, 'bold');
     if (d.boost) text(g, 'BOOST', w - P, h - P - 78 * u, 22 * u, '#ff7ad9', 'right');
+    text(g, `MSL ${d.missiles}   FLR ${d.flares}`, w - P, h - P - 104 * u, 15 * u, '#fff', 'right', BODY, 'bold');
+    if (d.lock) {
+      const locked = d.lock === 2;
+      text(g, locked ? '◆ LOCKED' : '◇ LOCKING', w - P - 140 * u, h - P - 104 * u, 15 * u, locked ? '#ff3355' : '#ffd23f', 'right', BODY, 'bold');
+    }
+  }
+  if (d.warning && Math.floor(d.time * 6) % 2 === 0) {
+    text(g, '⚠ MISSILE INCOMING', w / 2, h * 0.24, 34 * u, '#ff3355', 'center');
+    text(g, d.vr ? 'Left stick click: flares' : 'X: flares', w / 2, h * 0.24 + 32 * u, 18 * u, '#fff', 'center', BODY, 'bold');
   }
 
   // Mission banner
@@ -160,6 +196,17 @@ export function drawHUD(g, w, h, d) {
     if (d.bigSub) text(g, d.bigSub, w / 2, h * 0.42 + 64 * u, 28 * u, '#fff', 'center', BODY, 'bold');
   }
 
+  if (d.hitT > 0) {
+    const r = 18 * u, k = 6 * u;
+    g.strokeStyle = d.kill ? `rgba(255,60,80,${d.hitT * 4})` : `rgba(255,255,255,${d.hitT * 4})`;
+    g.lineWidth = 3 * u;
+    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      g.beginPath();
+      g.moveTo(w / 2 + sx * k, h / 2 + sy * k);
+      g.lineTo(w / 2 + sx * r, h / 2 + sy * r);
+      g.stroke();
+    }
+  }
   if (d.crosshair) {
     g.strokeStyle = 'rgba(255,255,255,0.85)';
     g.lineWidth = 2;

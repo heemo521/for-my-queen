@@ -21,6 +21,7 @@
     filter: drop-shadow(0 4px 0 #000);
   }
   #title .sub { font-size: 15px; letter-spacing: 0.3em; color: #ff7ad9; text-transform: uppercase; }
+  #title .life { max-width: 640px; font-size: 15px; line-height: 1.5; color: #7dffb0; text-shadow: 0 0 12px rgba(34,255,136,0.6); }
   #play {
     font-family: Bungee, Impact, sans-serif; font-size: 26px; padding: 12px 48px; border: 3px solid #000; border-radius: 10px;
     background: #8dff6b; color: #000; cursor: pointer; box-shadow: 0 5px 0 #000;
@@ -49,6 +50,7 @@
   <div class="sub">♛ for my queen ♛</div>
   <h1>GRAND THEFT<br>ORBIT</h1>
   <div class="sub">Nova Santos Station · open-world space crime</div>
+  <div class="life">◈ Your NOVA coin (NVC) balance is your life. It ticks down every second.<br>Getting shot drains it. Big guns cost it. Hit zero and you're dead. Steal more.</div>
   <button id="play">PLAY</button>
   <div class="tip">On a VR headset (Quest, PC VR), press <b>ENTER VR</b> at the bottom of the screen.</div>
   <div class="controls">
@@ -56,24 +58,26 @@
       <h3>DESKTOP · ON FOOT</h3>
       <b>WASD</b> move · <b>Mouse</b> look · <b>Shift</b> sprint<br>
       <b>Space</b> jump / jetpack · <b>C</b> jetpack down<br>
-      <b>Click</b> blaster · <b>E</b> steal ship / start mission<br>
+      <b>Click</b> fire · <b>1–8 / wheel</b> switch weapon · <b>E</b> steal ship / buy / start mission<br>
       <b>V</b> 1st/3rd person · <b>R</b> radio
     </div>
     <div>
       <h3>DESKTOP · FLYING</h3>
       <b>W/S</b> throttle · <b>Mouse</b> pitch &amp; yaw · <b>A/D</b> roll<br>
       <b>Space/C</b> up/down · <b>Shift</b> boost · <b>Click</b> lasers<br>
+      <b>Q / right-click</b> missile (hold nose on target to lock) · <b>X</b> flares<br>
       <b>E</b> exit ship, or board a nearby ship
     </div>
     <div>
       <h3>VR CONTROLLERS</h3>
       <b>Left stick</b> move / throttle+roll · <b>Right stick</b> turn / pitch+yaw<br>
-      <b>Right trigger</b> shoot · <b>Left trigger</b> boost<br>
+      <b>Right trigger</b> shoot · <b>Right stick click</b> switch weapon · <b>B</b> missile · <b>Left stick click</b> flares · <b>Left trigger</b> boost<br>
       <b>Grips</b> jetpack up/down · <b>A</b> interact · <b>X</b> radio · <b>Y</b> hide HUD
     </div>
     <div>
       <h3>THE STREETS</h3>
-      Steal ships, run missions (yellow marker in the plaza), collect $ crates.
+      Buy 7 futuristic weapons at the <b>Arms Lab</b>. Everything you destroy drops NVC; the <b>Chrono Siphon</b> steals it straight from targets.
+      Steal ships, run missions (yellow marker in the plaza), collect crates.
       Crimes raise your ★ wanted level. Lose the cops by staying away from them, or
       land in the <b>Pay 'n' Spray</b> ($100).
     </div>
