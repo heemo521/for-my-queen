@@ -67,6 +67,9 @@ export class Input {
       missile: e('KeyQ') || this.rightClick,
       flare: e('KeyX'),
       weaponStep: this.wheel > 0 ? 1 : this.wheel < 0 ? -1 : 0,
+      give: e('KeyG'),
+      talkStart: false,
+      talkEnd: false,
       slot: -1,
     };
     for (let i = 1; i <= 8; i++) if (e('Digit' + i)) a.slot = i - 1;
@@ -88,7 +91,8 @@ export class Input {
           if (btn[0]) a.boost = true;
           if (btn[1]) a.lift -= 1;
           if (edge(4)) a.radio = true;
-          if (edge(5)) a.view = true;
+          if (edge(5)) a.talkStart = true; // hold Y to talk to characters
+          if (!btn[5] && prev[5]) a.talkEnd = true;
           if (edge(3)) a.flare = true;
         } else if (src.handedness === 'right') {
           a.rx = sx;

@@ -9,6 +9,7 @@ import { drawHUD } from './hud.js';
 import { Sound } from './audio.js';
 import { glowTexture, canvas, toTexture } from './textures.js';
 import { Wallet } from './wallet.js';
+import { createAIPlayers } from './aiplayers.js';
 import { WEAPONS, weaponById, buildGun, createArsenal } from './weapons.js';
 
 const V3 = THREE.Vector3;
@@ -483,10 +484,15 @@ function avoidStation(s, target) {
   return target;
 }
 
+// Police hunt the player, or a wanted AI character they've locked onto.
+const preyOf = s => (s.ai.prey && s.ai.prey.mode !== 'dead' && s.ai.prey.wanted > 0 ? s.ai.prey : null);
 function attack(s, dt) {
-  const tgt = playerPos();
+  const prey = s.team === 'police' ? preyOf(s) : null;
+  const tgt = prey ? prey.worldPos() : playerPos();
+  const tvel = prey ? prey.worldVel() : playerVel();
+  const preyOnFoot = prey ? prey.mode === 'foot' : S.mode !== 'ship';
   const d = s.pos.distanceTo(tgt);
-  const lead = tgt.clone().addScaledVector(playerVel(), Math.min(d / 450, 1.5));
+  const lead = tgt.clone().addScaledVector(tvel, Math.min(d / 450, 1.5));
   if (d < 35) {
     steer(s, s.pos.clone().addScaledVector(s.right(tB), 60).addScaledVector(s.up(tC), 30), 0.8);
     return;
@@ -498,17 +504,17 @@ function attack(s, dt) {
     return;
   }
   let thr = d > 300 ? 1 : d > 90 ? 0.7 : 0.2;
-  if (S.mode !== 'ship' && d < 160) thr = 0.12;
+  if (preyOnFoot && d < 160) thr = 0.12;
   steer(s, lead, thr, d > 900);
   const dir = lead.sub(s.pos).normalize();
-  if (S.mode !== 'dead' && d < 520 && s.fwd(tB).dot(dir) > 0.97 && s.fireCd <= 0) {
+  if ((prey || S.mode !== 'dead') && d < 520 && s.fwd(tB).dot(dir) > 0.97 && s.fireCd <= 0) {
     dir.add(randUnit().multiplyScalar(0.025)).normalize();
     shipFire(s, s.team, s.team === 'pirate' ? 8 : 6, 420, dir);
     s.fireCd = s.team === 'pirate' ? 0.35 : 0.6 + rand(0, 0.5);
   }
   // heavier response: homing missiles from 3 stars, and always from pirates
   s.missileCd -= dt;
-  const allowed = s.team === 'pirate' || S.wanted >= 3;
+  const allowed = !prey && (s.team === 'pirate' || S.wanted >= 3);
   if (allowed && s.missileCd <= 0 && d > 180 && d < 1200 && S.mode !== 'dead' && enemyMissilesOnPlayer() < 2) {
     s.missileCd = s.team === 'pirate' ? rand(7, 11) : rand(9, 15) - S.wanted;
     launchMissile(s, s.team, 'player');
@@ -531,6 +537,11 @@ function updateAI(s, dt) {
     if (!s.ai.dest || s.pos.distanceTo(s.ai.dest) < 80) s.ai.dest = pickDest();
     steer(s, avoidStation(s, s.ai.dest), 0.6);
   } else if (s.team === 'police') {
+    if (s.ai.state === 'patrol' && !s.ai.prey) {
+      const wantedAI = aiSys.nearestWanted(s.pos, 1500);
+      if (wantedAI && !ships.some(o => o !== s && o.alive && o.ai.prey === wantedAI)) { s.ai.prey = wantedAI; s.ai.state = 'pursue'; }
+    }
+    if (s.ai.prey && !preyOf(s)) { s.ai.prey = null; if (S.wanted === 0) s.ai.state = 'patrol'; }
     if (s.ai.state === 'patrol') {
       if (S.wanted > 0 && s.pos.distanceTo(tgt) < 2000) s.ai.state = 'pursue';
       else {
@@ -543,7 +554,7 @@ function updateAI(s, dt) {
       steer(s, s.pos.clone().multiplyScalar(2).sub(tgt).add(tA.set(0, 300, 0)), 1, true);
       return;
     }
-    if (S.wanted === 0) { s.ai.state = 'leave'; return; }
+    if (S.wanted === 0 && !s.ai.prey) { s.ai.state = 'leave'; return; }
     attack(s, dt);
   } else if (s.team === 'pirate') {
     if (s.ai.aggro || s.pos.distanceTo(tgt) < 900) {
@@ -563,7 +574,8 @@ const TEAM_COL = { player: 0x39ff14, police: 0xff3344, pirate: 0xff9900, civ: 0x
 const addMat = (color, opacity) => new THREE.MeshBasicMaterial({ color, toneMapped: false, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
 const LASER = {};
 TEAM_COL.scatter = 0xff7a00;
-for (const t of ['player', 'police', 'pirate', 'scatter']) LASER[t] = { core: addMat(new THREE.Color(TEAM_COL[t]).lerp(new THREE.Color(1, 1, 1), 0.6), 1), glow: addMat(TEAM_COL[t], 0.35) };
+TEAM_COL.ai = 0xff4fd8;
+for (const t of ['player', 'police', 'pirate', 'scatter', 'ai']) LASER[t] = { core: addMat(new THREE.Color(TEAM_COL[t]).lerp(new THREE.Color(1, 1, 1), 0.6), 1), glow: addMat(TEAM_COL[t], 0.35) };
 const lasers = [];
 
 function spawnLaser(origin, dir, speed, team, dmg, owner, baseVel, life = 1.6, style = team) {
@@ -701,6 +713,32 @@ function updateLasers(dt) {
           if (d.alive && segSphere(prevPos, p, tA.copy(d.m.position).setY(d.m.position.y + 0.6), 0.7)) { damageDroid(d, L.dmg); hit = true; S.hitT = 0.25; S.kill = !d.alive; break; }
         }
       }
+      if (!hit) {
+        const a = aiSys.laserHit(prevPos, p, segSphere, L.dmg, 'player', null);
+        if (a) { hit = true; S.hitT = 0.25; S.kill = a.mode === 'dead'; }
+      }
+    } else if (L.team === 'ai') {
+      // an AI character's shot: hits the player, other characters, ships and droids
+      const shooter = L.owner instanceof Ship ? L.owner.aiPilot : L.owner;
+      const shooterShip = L.owner instanceof Ship ? L.owner : shooter?.ship;
+      const who = shooter?.name || 'someone';
+      if (S.mode === 'ship' && S.ship && segSphere(prevPos, p, S.ship.pos, S.ship.radius)) { hitShip = S.ship; hit = true; }
+      else if (S.mode === 'foot' && segSphere(prevPos, p, footCenter, 1.0)) { hurtPlayer(L.dmg); message(`${who} is shooting you!`, 1.5); hit = true; }
+      if (!hit) for (const s of ships) {
+        if (!s.alive || s === S.ship || s === shooterShip) continue;
+        if (segSphere(prevPos, p, s.pos, s.radius)) { hitShip = s; hit = true; break; }
+      }
+      if (!hit) for (const d of droids) {
+        if (d.alive && segSphere(prevPos, p, tA.copy(d.m.position).setY(d.m.position.y + 0.6), 0.7)) { damageDroid(d, L.dmg, 'ai'); hit = true; break; }
+      }
+      if (!hit && aiSys.laserHit(prevPos, p, segSphere, L.dmg, who, shooter)) hit = true;
+      if (hitShip) L.shooter = shooter;
+    } else if ((L.team === 'police' || L.team === 'pirate') && (() => {
+      // police/pirate fire can also hit AI characters (on foot or in their ships)
+      for (const s of ships) if (s.alive && s.aiPilot && segSphere(prevPos, p, s.pos, s.radius)) { hitShip = s; return true; }
+      return !!aiSys.laserHit(prevPos, p, segSphere, L.dmg, L.team === 'police' ? 'the police' : 'a pirate', null);
+    })()) {
+      hit = true;
     } else if (S.mode === 'ship' && S.ship && segSphere(prevPos, p, S.ship.pos, S.ship.radius)) {
       hitShip = S.ship;
       hit = true;
@@ -715,7 +753,8 @@ function updateLasers(dt) {
       if (hitShip) {
         sound.hit(hitShip === S.ship ? null : hp);
         if (L.team === 'player') { S.hitT = 0.25; S.kill = false; }
-        damageShip(hitShip, L.dmg, L.team === 'player' ? 'player' : L.team);
+        damageShip(hitShip, L.dmg, L.team === 'player' ? 'player' : L.team, L.shooter);
+        if (L.team === 'ai' && hitShip === S.ship) message(`${L.shooter?.name || 'Someone'} is shooting you!`, 1.5);
         if (hitShip === S.ship) { impact(hp, 0.35); }
       }
     }
@@ -877,11 +916,14 @@ function updateLock(dt) {
   return locked ? 2 : 1;
 }
 
-function damageShip(s, amt, by) {
+function damageShip(s, amt, by, shooterAI = null) {
   if (!s.alive) return;
   s.hull -= amt;
+  s.lastHitBy = by === 'ai' ? shooterAI?.name || 'someone' : by;
   if (s === S.ship) S.dmg = Math.min(0.6, S.dmg + amt / 60);
-  if (by === 'player' && s !== S.ship) {
+  if (s.aiPilot && by !== 'env') s.aiPilot.onAttacked(s.lastHitBy, amt);
+  if (by === 'ai' && shooterAI && s.team === 'police') shooterAI.addWanted(s.hull <= 0 ? 2 : 1);
+  if (by === 'player' && s !== S.ship && s.owner !== 'ai') {
     if (s.team === 'civ' && s.owner !== 'player') {
       addWanted(0, 1);
       if (s.pilot === 'npc') s.ai.flee = 8;
@@ -906,13 +948,18 @@ function destroyShip(s, by) {
   if (by === 'player') {
     S.hitT = 0.4;
     S.kill = true;
-    if (s.team === 'civ' && s.owner !== 'player') addWanted(1, 1);
+    if (s.team === 'civ' && s.owner !== 'player' && s.owner !== 'ai') addWanted(1, 1);
     else if (s.team === 'police') addWanted(1, 3);
     else if (s.team === 'pirate') message('Pirate down — grab the NVC!', 2);
   }
   panicDroids(s.pos, 80);
+  if (by === 'player' && s !== S.ship) aiSys.emit(`the player blew up ${s.aiPilot ? s.aiPilot.name + "'s ship" : s.team === 'police' ? 'a police cruiser' : s.team === 'pirate' ? 'a pirate ship' : 'a civilian ship'}`, s.pos);
+  else if (s.lastHitBy && s.lastHitBy !== 'env' && s !== S.ship && by !== 'player') aiSys.emit(`${s.lastHitBy} blew up ${s.team === 'police' ? 'a police cruiser' : 'a ship'}`, s.pos);
   if (s === S.ship) ejectFromWreck(s);
-  else if (s.coins > 0) dropCoins(s.pos, s.coins, s.vel);
+  else {
+    if (s.aiPilot) { const ai = s.aiPilot; s.aiPilot = null; ai.wrecked(s.lastHitBy); }
+    if (s.coins > 0) dropCoins(s.pos, s.coins, s.vel);
+  }
 }
 
 // Your ship blew up: you survive in your suit if you can afford it.
@@ -971,18 +1018,18 @@ function panicDroids(from, radius) {
   }
 }
 
-function damageDroid(d, amt) {
+function damageDroid(d, amt, by = 'player') {
   if (!d.alive) return;
   d.hp -= amt;
-  if (d.hp <= 0) killDroid(d);
+  if (d.hp <= 0) killDroid(d, by);
 }
 
-function killDroid(d) {
+function killDroid(d, by = 'player') {
   d.alive = false;
   scene.remove(d.m);
   fx.explosion(d.m.position.clone().setY(0.8), 1.4, null, false);
   sound.boom(0.4, d.m.position.clone());
-  addWanted(1, 1);
+  if (by === 'player') { addWanted(1, 1); aiSys.emit('the player killed a droid', d.m.position); }
   panicDroids(d.m.position, 40);
   if (d.coins > 0) dropCoins(d.m.position.clone().setY(1), d.coins, null);
 }
@@ -1130,16 +1177,32 @@ function droidTarget(d) {
     pull(dirIn, k, dt) { d.pulled = 0.3; d.m.position.addScaledVector(dirIn, Math.min(k * dt * 0.5, 2)); },
   });
 }
+function aiTarget(a) {
+  return (a.tgt ||= {
+    kind: 'ai', ref: a, radius: 0.9, alive: () => a.mode === 'foot',
+    get pos() { return a.worldPos(a.center); },
+    pull(dirIn, k, dt) { a.pos.addScaledVector(dirIn, Math.min(k * dt * 0.5, 2)); },
+  });
+}
 const arsenal = createArsenal({
   scene, fx, sound, solidAt, impact,
   targets: () => {
     const out = [];
     for (const s of ships) if (s.alive && s !== S.ship) out.push(shipTarget(s));
     for (const d of droids) if (d.alive) out.push(droidTarget(d));
+    for (const a of aiSys.footTargets()) out.push(aiTarget(a));
     return out;
   },
-  damage: (t, amt) => (t.kind === 'ship' ? damageShip(t.ref, amt, 'player') : damageDroid(t.ref, amt)),
+  damage: (t, amt) => (t.kind === 'ship' ? damageShip(t.ref, amt, 'player') : t.kind === 'ai' ? t.ref.hurt(amt, 'player') : damageDroid(t.ref, amt)),
   steal: (t, amt) => {
+    if (t.kind === 'ai') {
+      const k = Math.min(t.ref.wallet.balance, amt);
+      t.ref.wallet.drain(k, 'siphoned by the player', true);
+      wallet.earn(k, 'siphon');
+      t.ref.onAttacked('player', 5);
+      if (t.ref.wallet.empty) t.ref.die('drained dry by the player', 'player');
+      return k;
+    }
     const r = t.ref, k = Math.min(r.coins || 0, amt);
     if (k <= 0) return 0;
     r.coins -= k;
@@ -1223,6 +1286,67 @@ function buyWeapon(item) {
   item.label.material.map = labelTexture(w, true);
   item.label.material.needsUpdate = true;
 }
+
+// ---------- AI players: characters with a soul ----------
+let playerName = '';
+try { playerName = localStorage.getItem('gto.name') || ''; } catch { /* storage blocked */ }
+const aiSys = createAIPlayers({
+  scene, world, fx, sound, wallet, S, Ship, DECK_R, droids, crates, orbs,
+  ships: () => ships,
+  spawnLaser, shipFire, damageShip, damageDroid, dropCoins, placeCrate, randomDeckPoint, pushOutXZ, steer, avoidStation, padFree,
+  buildAvatar, animateAvatar, buildGun, playerPos, playerVel, message,
+  weaponName: () => weaponById(S.weapon).name,
+  playerName: () => playerName,
+  spawnFleeingDroid: pos => { spawnDroid(pos.clone().setY(0).add(tA.set(rand(-6, 6), 0, rand(-6, 6)))); droids[droids.length - 1].flee = 6; },
+});
+
+// Talking to the characters: T to type (desktop), hold Y to speak (VR, where supported).
+const chatEl = document.getElementById('chat');
+function openChat() {
+  if (!chatEl) return;
+  document.exitPointerLock?.();
+  chatEl.hidden = false;
+  chatEl.value = '';
+  chatEl.focus();
+}
+function sendChat(text) {
+  text = text.trim();
+  if (!text) return;
+  const m = text.match(/^\/name\s+(.{1,20})$/i);
+  if (m) {
+    playerName = m[1].trim();
+    try { localStorage.setItem('gto.name', playerName); } catch { /* ignore */ }
+    message(`Everyone will know you as ${playerName}.`, 2);
+    return;
+  }
+  const heard = aiSys.playerSays(text);
+  if (!heard) message('Nobody is close enough to hear you. Get closer or say their name.', 2);
+}
+chatEl?.addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'Enter') { sendChat(chatEl.value); chatEl.hidden = true; chatEl.blur(); }
+  else if (e.key === 'Escape') { chatEl.hidden = true; chatEl.blur(); }
+});
+chatEl?.addEventListener('keyup', e => e.stopPropagation());
+// open instantly on T so the first typed letters aren't lost
+addEventListener('keydown', e => {
+  if (e.code === 'KeyT' && chatEl?.hidden && S.started && !renderer.xr.isPresenting && S.mode !== 'dead') { e.preventDefault(); openChat(); }
+});
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recog = null;
+function startTalking() {
+  if (!SpeechRec) { aiSys.playerSays('Hey!'); return; }
+  try {
+    recog = new SpeechRec();
+    recog.lang = 'en-US';
+    recog.interimResults = false;
+    recog.onresult = e => sendChat(e.results[0][0].transcript);
+    recog.onerror = () => message('Voice chat unavailable — use the keyboard (T) on desktop.', 2);
+    recog.start();
+    message('Listening…', 1.5);
+  } catch { recog = null; }
+}
+function stopTalking() { try { recog?.stop(); } catch { /* ignore */ } recog = null; }
 
 // ---------- player: on foot ----------
 const FOOT_GRAVITY_H = 35;
@@ -1477,6 +1601,7 @@ function playerDie(reason = 'Your NVC ran out') {
   player.avatar.visible = false;
   if (S.mission) failMission('You died.', true);
   bigText('WASTED', reason, '#ff3355', 4.5);
+  aiSys.emit(`the player got WASTED (${reason})`, S.deathPos);
   sound.chime(false);
   haptic('both', 1, 400);
 }
@@ -1620,6 +1745,7 @@ function completeMission() {
   const m = S.mission;
   S.mission = null;
   wallet.earn(m.reward, 'mission: ' + m.name);
+  aiSys.emit(`the player completed the "${m.name}" job and earned ${m.reward} NVC`);
   bigText('MISSION PASSED', `+${m.reward} NVC`, '#ffd23f', 4);
   sound.chime(true);
 }
@@ -1821,6 +1947,7 @@ function hudData(vr, lock) {
   for (const mi of missiles) add(mi.m.position, mi.team === 'player' ? '#7dff6b' : '#ff7a00', 2.5, mi.target === 'player');
   for (const c of crates) add(c.position, '#22ff88', 2);
   for (const o of orbs) add(o.m.position, '#7dffb0', 2.5);
+  for (const ai of aiSys.list) if (ai.mode !== 'dead') add(ai.worldPos(), hex(ai.p.color), 4.5, true);
   if (!inShip) add(world.armsLab.center, '#22ff88', 4, false, 'sq');
   if (!inShip) for (const d of droids) add(d.m.position, '#94a3b8', 2);
   const tgt = missionTarget();
@@ -1839,6 +1966,8 @@ function hudData(vr, lock) {
     crosshair: !vr && S.mode !== 'dead',
     heat: S.heat, overheat: S.overheat, missiles: S.missiles, flares: S.flares, lock, warning: S.warning && S.mode !== 'dead',
     hitT: S.hitT, kill: S.kill,
+    feed: aiSys.feed.map(f => ({ name: f.name, css: hex(f.color), text: f.text, age: aiSys.clock - f.t })),
+    brain: aiSys.brain.status,
     radar: { heading, range: inShip ? 1600 : 260, blips },
   };
 }
@@ -1888,6 +2017,12 @@ function tick() {
       else S.view = S.view === 'third' ? 'first' : 'third';
     }
     if (a.flare && S.mode !== 'dead') dropFlares();
+    if (a.talkStart) startTalking();
+    if (a.talkEnd) stopTalking();
+    if (a.give && S.mode !== 'dead') {
+      const who = aiSys.giveTo(25);
+      message(who ? `You gave ${who.name} 25 NVC` : 'Get within 10 m of someone to give them NVC', 2);
+    }
     if (a.slot >= 0 && WEAPONS[a.slot]) {
       if (S.owned.has(WEAPONS[a.slot].id)) setWeapon(WEAPONS[a.slot].id);
       else message(`${WEAPONS[a.slot].name}: buy it at the Arms Lab (${WEAPONS[a.slot].price} NVC)`, 2);
@@ -1911,6 +2046,7 @@ function tick() {
     handleInteract(a);
   }
 
+  if (S.started) aiSys.update(dt);
   for (const s of ships) {
     if (!s.alive) continue;
     s.fireCd -= dt;
@@ -1977,4 +2113,4 @@ function tick() {
 renderer.setAnimationLoop(tick);
 
 // Debug handle for automated testing in the browser console.
-window.__game = { prof, renderer, wallet, arsenal, setWeapon, labItems, buyWeapon, orbs, S, player, world, fx, ships: () => ships, missiles, startGame, enterShip, startMission, damageShip, hurtPlayer, launchMissile };
+window.__game = { aiSys, prof, renderer, wallet, arsenal, setWeapon, labItems, buyWeapon, orbs, S, player, world, fx, ships: () => ships, missiles, startGame, enterShip, startMission, damageShip, hurtPlayer, launchMissile };

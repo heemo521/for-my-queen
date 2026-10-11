@@ -45,6 +45,50 @@ Your **NOVA coin (NVC)** balance is your life, like the movie *In Time*:
 
 Every weapon works on foot and mounted on your ship (bigger, longer range).
 
+## AI players (characters with a soul)
+
+Five other people live on Nova Santos and play the game alongside you:
+
+| | Who they are |
+|---|---|
+| **Vex Moreau** | con artist from the Neon Bar; robs droids with a siphon, flirts, terrified of her clock running out |
+| **Big Tam** | honest freighter pilot hauling ore for his family on Vesh; hates cops; Vex owes him 50 NVC |
+| **Kiko-9** | 19-year-old street racer; steals fast ships, wants a crew, challenges you |
+| **Sister Nyx** | preacher of the Void who gives NVC to the desperate, and is merciless if innocents get hurt |
+| **Rourke** | ex-cop bounty hunter; comes after anyone with 3★ or more, including you |
+
+Each of them has their own NVC life clock (they can die and come back from the Med Bay), memories, moods, grudges, and an opinion of you that changes with what you do. They walk the deck, steal and fly ships, collect crates, rob droids, buy weapons, fight, flee, give you NVC or try to siphon yours, and get hunted by the police. They talk out loud (speech bubbles + voice) and react to what you say.
+
+**Talk to them:** press **T** on desktop and type (start with someone's name to reach them from further away; `/name YourName` tells everyone your name). In VR, **hold Y** and speak, where the browser supports speech recognition. **G** gives the nearest character 25 NVC.
+
+### Giving them real minds (Claude)
+
+Without a server, characters run on their built-in offline personalities. To let Claude think for them, run the small brain server in `server/`. It keeps your Anthropic API key private, because a key in the browser could be copied by anyone.
+
+**Deploy free on Cloudflare Workers:**
+
+```bash
+cd server
+npm install
+npx wrangler login
+npx wrangler secret put ANTHROPIC_API_KEY   # paste your key from console.anthropic.com
+npx wrangler deploy                          # prints https://gto-brain.<you>.workers.dev
+```
+
+Then open the game once with `?brain=` set to that address, and it will be remembered:
+`https://heemo521.github.io/for-my-queen/?brain=https://gto-brain.<you>.workers.dev`
+
+(`?brain=off` switches back to offline personalities.) The HUD shows "● Claude brains online" when it's working.
+
+**Run it locally instead:** `cd server && npm install && ANTHROPIC_API_KEY=... npm run dev`, then open the game with `?brain=http://localhost:8787`.
+
+**Settings** (`server/wrangler.toml`):
+- `MODEL`: defaults to `claude-opus-5-5`. `claude-haiku-5-5` is much cheaper and faster, if you prefer.
+- `EFFORT`: defaults to `low` for quick decisions.
+- `ALLOWED_ORIGINS`: set it to `https://heemo521.github.io` so only your game can use the brain.
+
+**Cost:** each character asks for a decision about every 10–15 seconds while you play (more often when you talk to them). Set a monthly spend limit in the Anthropic Console.
+
 ## Real crypto (future)
 
 `src/wallet.js` is the only place balances change (`earn`, `spend`, `drain`, `ledger`), so it can be swapped for a real wallet later. Before any real money is involved:
@@ -79,8 +123,10 @@ Every weapon works on foot and mounted on your ship (bigger, longer range).
 | Missile (lock first) | Q / right-click | B |
 | Flares | X | Left stick click |
 | Steal / enter / exit / start mission | E | A |
+| Talk to characters | T (type) | hold Y (speak) |
+| Give 25 NVC | G | — |
 | Radio | R | X |
-| Camera / HUD | V (1st/3rd person) | Y (toggle HUD) |
+| Camera | V (1st/3rd person) | — |
 
 ## Code
 
@@ -92,6 +138,10 @@ Every weapon works on foot and mounted on your ship (bigger, longer range).
 - `src/weapons.js`: weapon definitions, gun models, all firing behaviours
 - `src/fx.js`: particles, explosions, debris, shockwaves, flash lights, speed dust
 - `src/textures.js`: procedural noise, hull plating, rock and planet textures
+- `src/aiplayers.js`: AI characters: perception, memory, actions, speech
+- `src/personas.js`: who the characters are
+- `src/brain.js`: client for the brain server (falls back to offline personalities)
+- `server/worker.js`: the brain: Cloudflare Worker that asks Claude what a character does next
 - `src/hud.js`: GTA-style HUD (DOM overlay on desktop, floating panel in VR)
 - `src/input.js`: keyboard/mouse and WebXR controller mapping
 - `src/audio.js`: sound effects and procedural radio
