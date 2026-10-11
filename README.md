@@ -83,11 +83,11 @@ Then open the game once with `?brain=` set to that address, and it will be remem
 **Run it locally instead:** `cd server && npm install && ANTHROPIC_API_KEY=... npm run dev`, then open the game with `?brain=http://localhost:8787`.
 
 **Settings** (`server/wrangler.toml`):
-- `MODEL`: defaults to `claude-opus-5-5`. `claude-haiku-5-5` is much cheaper and faster, if you prefer.
+- `MODEL`: defaults to `claude-haiku-5-5`, Claude's fastest model, so characters react quickly. Their reflexes (aiming, steering, dodging) run in the game every frame; Claude decides what they do next.
 - `EFFORT`: defaults to `low` for quick decisions.
 - `ALLOWED_ORIGINS`: set it to `https://heemo521.github.io` so only your game can use the brain.
 
-**Cost:** each character asks for a decision about every 10–15 seconds while you play (more often when you talk to them). Set a monthly spend limit in the Anthropic Console.
+**Cost:** each character asks for a decision about every 4–8 seconds while you play (right away when you talk to them). Haiku is very cheap, but still set a monthly spend limit in the Anthropic Console.
 
 ## Real crypto (future)
 

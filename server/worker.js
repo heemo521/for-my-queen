@@ -70,7 +70,7 @@ function rateLimited(ip) {
   if (now - h.t > 60000) { h.t = now; h.n = 0; }
   h.n++;
   hits.set(ip, h);
-  return h.n > 60;
+  return h.n > 150;
 }
 
 function cors(origin, env) {
@@ -106,11 +106,11 @@ export default {
 
     client ||= new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
     try {
-      const response = await client.beta.messages.create({
-        model: env.MODEL || 'claude-opus-5-5',
+      // Haiku: fast, cheap decisions. The split-second stuff (aiming, steering,
+      // dodging) runs in the game every frame; Claude only picks what to do next.
+      const response = await client.messages.create({
+        model: env.MODEL || 'claude-haiku-5-5',
         max_tokens: 4000,
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default',
         output_config: {
           effort: env.EFFORT || 'low',
           format: { type: 'json_schema', schema: DECISION_SCHEMA },

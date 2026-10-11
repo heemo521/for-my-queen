@@ -4,7 +4,7 @@ compatibility_date = "2025-09-01"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
-MODEL = "claude-opus-5-5"
+MODEL = "claude-haiku-5-5"
 EFFORT = "low"
 # Lock this down to your game's address once it's live, e.g. "https://heemo521.github.io"
 ALLOWED_ORIGINS = "*"

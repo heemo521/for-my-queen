@@ -276,7 +276,7 @@ export function createAIPlayers(ctx) {
       if (!d) d = this.offlineDecide(obs);
       this.apply(d);
       this.pending = false;
-      this.decideT = fromBrain ? rnd(9, 15) : rnd(5, 9);
+      this.decideT = fromBrain ? rnd(4, 8) : rnd(5, 9);
     }
 
     offlineDecide() {

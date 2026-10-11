@@ -24,7 +24,7 @@ export class BrainClient {
   constructor() {
     this.url = configuredUrl();
     this.inFlight = 0;
-    this.maxInFlight = 2;
+    this.maxInFlight = 3;
     this.failures = 0;
     this.status = this.url ? 'connecting' : 'offline';
   }
